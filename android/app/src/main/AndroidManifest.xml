@@ -3,6 +3,9 @@
     <!-- ADICIONE ESTAS PERMISSÕES AQUI (logo abaixo da tag <manifest>) -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.WRITE_CONTACTS" /> 
+    
     <queries>
         <intent>
             <action android:name="android.intent.action.VIEW" />

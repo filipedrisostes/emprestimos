@@ -201,7 +201,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             );
                           }
                           
-                          final valorMensal = transacao.retorno / 12; // Exemplo: dividindo por 12 meses
+                          final valorMensal = transacao.retorno; // Exemplo: dividindo por 12 meses
                           
                           return Card(
                             margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
