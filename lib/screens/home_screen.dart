@@ -77,10 +77,10 @@ class _HomeScreenState extends State<HomeScreen> {
           mode: LaunchMode.externalApplication, // Força abertura no app externo
         );
       } else {
-        // Fallback para abrir no navegador
-        final webUrl = 'https://web.whatsapp.com/send?phone=$numeroLimpo&text=$mensagem';
+        String androidUrl = "whatsapp://send?phone=$numeroLimpo&text=$mensagem";
+        String iosUrl = "https://wa.me/$numeroLimpo?text=${Uri.parse(mensagem)}";
         await launchUrl(
-          Uri.parse(webUrl),
+          Uri.parse(androidUrl),
           mode: LaunchMode.externalApplication,
         );
       }
