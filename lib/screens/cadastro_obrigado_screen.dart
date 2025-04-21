@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:emprestimos/contact_helper.dart';
 import 'package:emprestimos/dao/obrigado_dao.dart';
 import 'package:emprestimos/models/obrigado.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:emprestimos/database_helper.dart';
 
 class CadastroObrigadoScreen extends StatefulWidget {

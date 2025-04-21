@@ -1,3 +1,5 @@
+import 'package:emprestimos/configuracao_service.dart';
+import 'package:emprestimos/currency_input_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -48,6 +50,7 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
     _transacaoDao = TransacaoDao(_dbHelper);
     _obrigadoDao = ObrigadoDao(_dbHelper);
     _carregarObrigados();
+    _carregarJurosPadrao();
 
     // Se estiver editando, preenche os campos
     if (widget.transacao != null) {
@@ -91,8 +94,9 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
   void _calcularRetorno() {
     try {
       final valor = _extrairValorNumerico(_valorController.text);
-      final juros = _extrairValorNumerico(_jurosController.text) / 100;
-      final retorno = valor *  juros;
+      double juros = _extrairValorNumerico(_jurosController.text);
+      juros = juros / 100; 
+      final retorno = valor * juros;
       _retornoController.text = _formatarMoeda(retorno);
     } catch (e) {
       _retornoController.text = 'R\$ 0,00';
@@ -275,7 +279,7 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
                     border: OutlineInputBorder(),
                   ),
                   keyboardType: TextInputType.number,
-                  inputFormatters: [_valorMask],
+                  inputFormatters: [CurrencyInputFormatter()],
                   onChanged: (value) => _calcularRetorno(),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
@@ -337,4 +341,12 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
       ),
     );
   }
+
+  Future<void> _carregarJurosPadrao() async {
+    final jurosPadrao = await ConfiguracaoService.getJurosPadrao();
+    // Converte para string formatada e adiciona o símbolo de porcentagem
+    _jurosController.text = '${jurosPadrao.toStringAsFixed(2).replaceAll('.', ',')}%';
+    _calcularRetorno();
+  }
+ 
 }

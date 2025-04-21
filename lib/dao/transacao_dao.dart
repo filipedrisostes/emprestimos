@@ -107,4 +107,8 @@ class TransacaoDao {
     );
     return List.generate(maps.length, (i) => Transacao.fromMap(maps[i]));
   }
+
+  
+
+  
 }
