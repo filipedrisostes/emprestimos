@@ -439,7 +439,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _abrirConfigJuros(BuildContext context) {
-    final _jurosController = TextEditingController();
+    final jurosController = TextEditingController();
 
     showDialog(
       context: context,
@@ -448,11 +448,11 @@ class _HomeScreenState extends State<HomeScreen> {
           future: ConfiguracaoService.getJurosPadrao(),
           builder: (context, snapshot) {
             if (snapshot.hasData) {
-              _jurosController.text = snapshot.data!.toStringAsFixed(2);
+              jurosController.text = snapshot.data!.toStringAsFixed(2);
               return AlertDialog(
                 title: const Text('Configurar Juros Padrão'),
                 content: TextField(
-                  controller: _jurosController,
+                  controller: jurosController,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
                     labelText: 'Juros Padrão (%)',
@@ -466,7 +466,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   TextButton(
                     onPressed: () async {
-                      final juros = double.tryParse(_jurosController.text) ?? 0;
+                      final juros = double.tryParse(jurosController.text) ?? 0;
                       await ConfiguracaoService.setJurosPadrao(juros);
                       Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(

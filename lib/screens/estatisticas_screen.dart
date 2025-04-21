@@ -320,7 +320,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                     SizedBox(
                       height: 300,
                       child: SfCartesianChart(
-                        primaryXAxis: CategoryAxis(),
+                        primaryXAxis: const CategoryAxis(),
                         series: <CartesianSeries>[
                           ColumnSeries<MapEntry<String, double>, String>(
                             dataSource: _dadosGraficoBarras.entries.toList(),
@@ -358,7 +358,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                     SizedBox(
                       height: 300,
                       child: SfCartesianChart(
-                        primaryXAxis: CategoryAxis(),
+                        primaryXAxis: const CategoryAxis(),
                         series: <CartesianSeries>[
                           LineSeries<Map<String, dynamic>, String>(
                             dataSource: _previsaoArrecadacao,

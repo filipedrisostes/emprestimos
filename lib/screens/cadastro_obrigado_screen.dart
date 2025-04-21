@@ -24,7 +24,7 @@ class _CadastroObrigadoScreenState extends State<CadastroObrigadoScreen> {
   
   List<Map<String, String>> _contacts = [];
   List<Map<String, String>> _filteredContacts = [];
-  List<Map<String, String>> _selectedContacts = [];
+  final List<Map<String, String>> _selectedContacts = [];
   bool _showManualForm = false;
   bool _isLoading = false;
   bool _isSaving = false;

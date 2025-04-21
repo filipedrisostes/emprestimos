@@ -230,7 +230,7 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
                       alignment: Alignment.topLeft,
                       child: Material(
                         elevation: 4.0,
-                        child: Container(
+                        child: SizedBox(
                           height: 200.0,
                           width: MediaQuery.of(context).size.width - 32,
                           child: ListView.builder(
