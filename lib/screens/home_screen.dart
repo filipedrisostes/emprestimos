@@ -7,6 +7,7 @@ import 'package:emprestimos/models/obrigado.dart';
 import 'package:emprestimos/models/transacao.dart';
 import 'package:emprestimos/screens/cadastro_obrigado_screen.dart';
 import 'package:emprestimos/screens/cadastro_transacao_screen.dart';
+import 'package:emprestimos/screens/estatisticas_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -415,6 +416,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 context,
                 MaterialPageRoute(
                   builder: (context) => const CadastroTransacaoScreen(),
+                ),
+              ).then((_) => _carregarDados());
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.bar_chart),
+            title: const Text('Estatísticas'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const EstatisticasScreen(),
                 ),
               ).then((_) => _carregarDados());
             },
