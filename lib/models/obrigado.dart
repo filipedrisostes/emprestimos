@@ -2,11 +2,13 @@ class Obrigado {
   final int? id;
   final String nome;
   final String zap;
+  final String? mensagemPersonalizada; // ✅ Novo campo opcional para mensagem personalizada
 
   Obrigado({
     this.id,
     required this.nome,
     required this.zap,
+    this.mensagemPersonalizada,
   });
 
   Map<String, dynamic> toMap() {
@@ -14,6 +16,7 @@ class Obrigado {
       'id': id,
       'nome': nome,
       'zap': zap,
+      'mensagemPersonalizada': mensagemPersonalizada, // ✅ Adicionado aqui também
     };
   }
 
@@ -22,6 +25,7 @@ class Obrigado {
       id: map['id'],
       nome: map['nome'],
       zap: map['zap'],
+      mensagemPersonalizada: map['mensagemPersonalizada'], // ✅ Carregar o novo campo
     );
   }
 }

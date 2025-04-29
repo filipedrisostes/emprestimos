@@ -27,6 +27,9 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
   final _dbHelper = DatabaseHelper.instance;
   late TransacaoDao _transacaoDao;
   late ObrigadoDao _obrigadoDao;
+  DateTime? _dataVencimento; // ✅ Nova variável para vencimento
+  int _diasVencimentoPadrao = 30; // ✅ Dias de vencimento padrão
+
   
   List<Obrigado> _obrigados = [];
   Obrigado? _selectedObrigado;
@@ -47,6 +50,7 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
   @override
   void initState() {
     super.initState();
+    _carregarDiasVencimentoPadrao(); // ✅ Carrega os dias padrão
     _transacaoDao = TransacaoDao(_dbHelper);
     _obrigadoDao = ObrigadoDao(_dbHelper);
     _carregarObrigados();
@@ -59,6 +63,13 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
     } else {
       _jurosController.text = '0,00%';
     }
+  }
+  
+  Future<void> _carregarDiasVencimentoPadrao() async {
+    _diasVencimentoPadrao = await ConfiguracaoService.getDiasVencimentoPadrao();
+    setState(() {
+      _dataVencimento = _dataEmprestimo.add(Duration(days: _diasVencimentoPadrao));
+    });
   }
 
   Future<void> _carregarObrigados() async {
@@ -90,7 +101,7 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
       decimalDigits: 2,
     ).format(valor);
   }
-
+  
   void _calcularRetorno() {
     try {
       final valor = _extrairValorNumerico(_valorController.text);
@@ -132,9 +143,10 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
   Future<void> _salvarTransacao() async {
     if (_formKey.currentState!.validate() && _selectedObrigado != null) {
       final transacao = Transacao(
-        id: _isEditing ? widget.transacao!.id : null,
+        id: widget.transacao!.id,
         idObrigado: _selectedObrigado!.id!,
         dataEmprestimo: _dataEmprestimo,
+        dataVencimento: _dataVencimento, // ✅ Salva o vencimento
         valorEmprestado: _extrairValorNumerico(_valorController.text),
         percentualJuros: _extrairValorNumerico(_jurosController.text),
         retorno: _extrairValorNumerico(_retornoController.text),
@@ -267,6 +279,34 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
                         Text(DateFormat('dd/MM/yyyy').format(_dataEmprestimo)),
                         const Icon(Icons.calendar_today),
                       ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // ✅ Novo campo para Data de Vencimento
+                InkWell(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: _dataVencimento ?? _dataEmprestimo,
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime(2100),
+                    );
+                    if (picked != null) {
+                      setState(() {
+                        _dataVencimento = picked;
+                      });
+                    }
+                  },
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Data de Vencimento',
+                      border: OutlineInputBorder(),
+                    ),
+                    child: Text(
+                      _dataVencimento != null
+                          ? DateFormat('dd/MM/yyyy').format(_dataVencimento!)
+                          : 'Selecione uma data',
                     ),
                   ),
                 ),

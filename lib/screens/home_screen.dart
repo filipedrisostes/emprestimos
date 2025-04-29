@@ -39,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _carregarDados();
+    _enviarMensagensAutomaticamente();
   }
 
 
@@ -116,6 +117,10 @@ class _HomeScreenState extends State<HomeScreen> {
         _obrigadoDao.getAllObrigados(),
       ] as Iterable<Future>);
       
+      for (var t in transacoes) {
+        print('Transação carregada: ${t.toMap()}');
+      }
+
       double total = 0;
       for (var transacao in transacoes) {
         if ((transacao.dataPagamentoCompleto == null && transacao.dataPagamentoRetorno == null)) {
@@ -156,7 +161,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     if (confirmado == true) {
-      await _transacaoDao.updateDataPagamentoCompleto(transacao.id!, DateTime.now());
+      await _transacaoDao.updateDataPagamentoCompleto(transacao.id, DateTime.now());
       await _carregarDados();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Pagamento registrado com sucesso!')),
@@ -165,10 +170,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _marcarComoPagoJuros(Transacao transacao) async {
-    await _transacaoDao.updateDataPagamentoRetorno(transacao.id!, DateTime.now());
+    await _transacaoDao.updateDataPagamentoRetorno(transacao.id, DateTime.now());
     
     // Cria nova transação para o próximo mês
     final novaTransacao = Transacao(
+      id: transacao.id,
       idObrigado: transacao.idObrigado,
       dataEmprestimo: DateTime(
         transacao.dataEmprestimo.year,
@@ -188,16 +194,25 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Obrigado _encontrarObrigado(int idObrigado) {
-    return _obrigados.firstWhere(
-      (o) => o.id == idObrigado,
-      orElse: () => Obrigado(
-        id: idObrigado,
-        nome: 'Obrigado não encontrado',
-        zap: '---',
-      ),
+  Obrigado _encontrarObrigado(int? idObrigado) {
+  if (idObrigado == null) {
+    return Obrigado(
+      id: 0,
+      nome: 'ID Obrigado inválido',
+      zap: '---',
     );
   }
+
+  return _obrigados.firstWhere(
+    (o) => o.id == idObrigado,
+    orElse: () => Obrigado(
+      id: idObrigado,
+      nome: 'Obrigado não encontrado',
+      zap: '---',
+    ),
+  );
+}
+
 
   @override
   Widget build(BuildContext context) {
@@ -219,6 +234,10 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _carregarDados,
+          ),
+          IconButton(
+            icon: const Icon(Icons.send), // ✅ Botão novo para envio automático
+            onPressed: _enviarMensagensAutomaticamente,
           ),
         ],
       ),
@@ -257,9 +276,12 @@ class _HomeScreenState extends State<HomeScreen> {
                           DateTime(_currentMonth.year, _currentMonth.month + 1, 0),
                         ),
                         builder: (context, snapshot) {
-                          if (snapshot.hasError) {
-                            return Center(child: Text('Erro: ${snapshot.error}'));
-                          }
+                                                  if (snapshot.hasError) {
+                          print('Erro completo no snapshot: ${snapshot.error}');
+                          return const Center(
+                            child: Text('Erro ao carregar as transações.'),
+                          );
+                        }
 
                           final transacoes = snapshot.data ?? [];
 
@@ -305,9 +327,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildTransacaoCard(Transacao transacao, Obrigado obrigado) {
+    final hoje = DateTime.now();
+    final bool vencido = transacao.dataVencimento != null && transacao.dataVencimento!.isBefore(hoje);
+
     return Card(
       margin: const EdgeInsets.all(8),
       elevation: 2,
+      color: vencido ? Colors.red[100] : null, // ✅ Se vencido, deixa vermelho claro
       child: ListTile(
         title: Text(obrigado.nome),
         subtitle: Column(
@@ -317,6 +343,8 @@ class _HomeScreenState extends State<HomeScreen> {
             Text('Valor: ${_currencyFormat.format(transacao.valorEmprestado)}'),
             Text('Juros: ${transacao.percentualJuros}%'),
             Text('Total: ${_currencyFormat.format(transacao.retorno)}'),
+            if (transacao.dataVencimento != null)
+              Text('Vencimento: ${DateFormat('dd/MM/yyyy').format(transacao.dataVencimento!)}'), 
             if (transacao.dataPagamentoCompleto != null)
               Text(
                 'Pago em: ${DateFormat('dd/MM/yyyy').format(transacao.dataPagamentoCompleto!)}',
@@ -491,6 +519,46 @@ class _HomeScreenState extends State<HomeScreen> {
     if (text.isEmpty) return text;
     return text[0].toUpperCase() + text.substring(1);
   }
+
+  Future<void> _enviarMensagensAutomaticamente() async {
+  final hoje = DateTime.now();
+  
+  // Filtra transações vencidas e não pagas
+  final vencidas = _transacoes.where((transacao) {
+    return transacao.dataVencimento != null &&
+           transacao.dataVencimento!.isBefore(hoje) &&
+           transacao.dataPagamentoCompleto == null;
+  }).toList();
+
+  for (var transacao in vencidas) {
+    final obrigado = _encontrarObrigado(transacao.idObrigado);
+
+    // Usa a mensagem personalizada se existir, senão a padrão
+    final mensagem = Uri.encodeFull(
+      obrigado.mensagemPersonalizada != null && obrigado.mensagemPersonalizada!.isNotEmpty
+          ? obrigado.mensagemPersonalizada!
+          : 'Olá ${obrigado.nome}, tudo bem? Lembrando que o valor de ${_currencyFormat.format(transacao.retorno)} venceu.'
+    );
+
+    final numeroLimpo = obrigado.zap.replaceAll(RegExp(r'[^0-9]'), '');
+    final url = 'https://wa.me/$numeroLimpo?text=$mensagem';
+    final uri = Uri.parse(url);
+
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao enviar mensagem: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+}
+
 }
 
 class ConfiguracaoService {
@@ -505,6 +573,6 @@ class ConfiguracaoService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_jurosPadraoKey, valor);
   }
-
+  
 
 }

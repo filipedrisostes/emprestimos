@@ -105,10 +105,9 @@ class TransacaoDao {
         fim.toIso8601String(),
       ],
     );
+
+     print('Resultado da consulta: $maps'); // 👈 Adiciona isso
+
     return List.generate(maps.length, (i) => Transacao.fromMap(maps[i]));
-  }
-
-  
-
-  
+  }  
 }

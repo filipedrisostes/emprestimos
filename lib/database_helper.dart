@@ -4,6 +4,7 @@ import 'package:path/path.dart';
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
+  static const int _databaseVersion = 3; 
 
   DatabaseHelper._init();
 
@@ -17,7 +18,12 @@ class DatabaseHelper {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
 
-    return await openDatabase(path, version: 1, onCreate: _createDB);
+    return await openDatabase(
+      path, 
+      version: _databaseVersion, 
+      onCreate: _createDB,
+      onUpgrade: _onUpgrade, // ✅ Adiciona suporte a upgrades
+    );
   }
 
   Future _createDB(Database db, int version) async {
@@ -42,6 +48,21 @@ class DatabaseHelper {
         FOREIGN KEY (id_obrigado) REFERENCES obrigado (id)
       )
     ''');
+  }
+  // ✅ Novo método para atualização de estrutura de banco
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // Atualizações para versão 2
+      await db.execute('ALTER TABLE obrigado ADD COLUMN mensagemPersonalizada TEXT;');
+      await db.execute('ALTER TABLE transacao ADD COLUMN dataVencimento TEXT;');
+    }
+
+    if (oldVersion < 3) {
+      // Atualizações para versão 3
+      await db.execute('UPDATE transacao SET dataVencimento = datetime(data_emprestimo, \'+30 days\') WHERE dataVencimento IS NULL;');
+    }
+
+    // Se no futuro subir para 3, 4, 5... adiciona novos if aqui
   }
 
   Future close() async {

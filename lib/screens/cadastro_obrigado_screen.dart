@@ -21,6 +21,7 @@ class _CadastroObrigadoScreenState extends State<CadastroObrigadoScreen> {
   final _nomeController = TextEditingController();
   final _zapController = TextEditingController();
   final _searchController = TextEditingController();
+  final _mensagemController = TextEditingController(); // ✅ Novo Controller para mensagem personalizada
   
   List<Map<String, String>> _contacts = [];
   List<Map<String, String>> _filteredContacts = [];
@@ -113,7 +114,13 @@ class _CadastroObrigadoScreenState extends State<CadastroObrigadoScreen> {
       },
       autovalidateMode: AutovalidateMode.onUserInteraction,
     ),
-
+    const SizedBox(height: 16),
+    // ✅ Novo campo de mensagem personalizada
+    TextFormField(
+      controller: _mensagemController,
+      decoration: const InputDecoration(labelText: 'Mensagem personalizada (opcional)'),
+      maxLines: 3,
+    ),
     const SizedBox(height: 24),
 
     // Botão de Salvar
@@ -218,6 +225,7 @@ class _CadastroObrigadoScreenState extends State<CadastroObrigadoScreen> {
         Obrigado(
           nome: _nomeController.text,
           zap: _formatNumber(_zapController.text),
+          mensagemPersonalizada: _mensagemController.text.isEmpty ? null : _mensagemController.text, // ✅ Salva se houver
         ),
       );
       
