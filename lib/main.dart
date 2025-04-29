@@ -2,8 +2,16 @@ import 'package:emprestimos/screens/home_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart';
+import 'package:dotenv/dotenv.dart';
 
-void main() {
+final DotEnv env = DotEnv()..load();  // Carrega o .env manualmente
+
+void main() async {
+  final host = env['DB_HOST'];
+  final port = int.parse(env['DB_PORT'] ?? '5432');
+  final user = env['DB_USER'];
+  final pass = env['DB_PASSWORD'];
+  final dbName = env['DB_NAME'];
   Intl.defaultLocale = 'pt_BR';
   runApp(const MyApp());
 }
