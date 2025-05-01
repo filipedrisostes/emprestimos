@@ -20,6 +20,15 @@ class Obrigado {
     };
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'nome': nome,
+      'zap': zap,
+      'mensagem_personalizada': mensagemPersonalizada,
+    };
+  }
+
   factory Obrigado.fromMap(Map<String, dynamic> map) {
     return Obrigado(
       id: map['id'],

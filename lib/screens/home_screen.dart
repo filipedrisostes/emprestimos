@@ -1,13 +1,15 @@
-
-
 import 'package:emprestimos/dao/obrigado_dao.dart';
 import 'package:emprestimos/dao/transacao_dao.dart';
 import 'package:emprestimos/database_helper.dart';
+
 import 'package:emprestimos/models/obrigado.dart';
 import 'package:emprestimos/models/transacao.dart';
 import 'package:emprestimos/screens/cadastro_obrigado_screen.dart';
 import 'package:emprestimos/screens/cadastro_transacao_screen.dart';
 import 'package:emprestimos/screens/estatisticas_screen.dart';
+import 'package:emprestimos/services/sync_sender_service.dart';
+import 'package:emprestimos/models/obrigado.dart';
+import 'package:emprestimos/models/transacao.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -28,6 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime _currentMonth = DateTime.now();
   List<Obrigado> _obrigados = [];
   bool _isLoading = true;
+  bool _isSyncing = false;
   
   final NumberFormat _currencyFormat = NumberFormat.currency(
     locale: 'pt_BR',
@@ -239,6 +242,23 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.send), // ✅ Botão novo para envio automático
             onPressed: _enviarMensagensAutomaticamente,
           ),
+          IconButton(
+            icon: const Icon(Icons.sync),
+            tooltip: 'Sincronizar com o servidor',
+            onPressed: _sincronizarDados,
+          ),
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const CadastroTransacaoScreen()),
+              ).then((_) {
+                 _carregarTransacoes();
+                _sincronizarDados(); // 👈 adicione aqui
+              } );
+            },
+          ),
         ],
       ),
       drawer: _buildDrawer(),
@@ -320,6 +340,19 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
           ),
+          if (_isSyncing)
+            const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(width: 10),
+                  Text("Sincronizando..."),
+                ],
+              ),
+            ),
+
         ],
       ),
 
@@ -558,6 +591,30 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 }
+
+Future<void> _sincronizarDados() async {
+  setState(() => _isSyncing = true);
+
+  try {
+    final obrigados = _obrigados;
+    final transacoes = _transacoes;
+
+    await SyncSenderService().sincronizar(obrigados, transacoes);
+    await SyncSenderService().processarFilaPendente();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Sincronização concluída')),
+    );
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Erro ao sincronizar: $e')),
+    );
+  } finally {
+    setState(() => _isSyncing = false);
+  }
+}
+
+
 
 }
 

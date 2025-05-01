@@ -35,6 +35,20 @@ class Transacao {
     };
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'id_obrigado': idObrigado,
+      'data_emprestimo': dataEmprestimo.toIso8601String(),
+      'valor_emprestado': valorEmprestado,
+      'percentual_juros': percentualJuros,
+      'retorno': retorno,
+      'data_pagamento_retorno': dataPagamentoRetorno?.toIso8601String(),
+      'data_pagamento_completo': dataPagamentoCompleto?.toIso8601String(),
+      'data_vencimento': dataVencimento?.toIso8601String(),
+    };
+  }
+
   factory Transacao.fromMap(Map<String, dynamic> map) {
   return Transacao(
     id: map['id'],
