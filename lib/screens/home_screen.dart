@@ -6,9 +6,9 @@ import 'package:emprestimos/models/obrigado.dart';
 import 'package:emprestimos/models/transacao.dart';
 import 'package:emprestimos/screens/cadastro_obrigado_screen.dart';
 import 'package:emprestimos/screens/cadastro_transacao_screen.dart';
+import 'package:emprestimos/screens/configuracao_screen.dart';
 import 'package:emprestimos/screens/estatisticas_screen.dart';
-import 'package:emprestimos/models/obrigado.dart';
-import 'package:emprestimos/models/transacao.dart';
+import 'package:emprestimos/screens/restore_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -445,8 +445,17 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.settings),
-            title: const Text('Configurar Juros Padrão'),
-            onTap: () => _abrirConfigJuros(context),
+            title: const Text('Configurações'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const ConfiguracaoScreen(),
+                ),
+              ).then((_) => _carregarDados());
+            },
+            //onTap: () => _abrirConfigJuros(context),
           ),
           ListTile(
             leading: const Icon(Icons.person_add),
@@ -483,6 +492,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 context,
                 MaterialPageRoute(
                   builder: (context) => const EstatisticasScreen(),
+                ),
+              ).then((_) => _carregarDados());
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.restore_page),
+            title: const Text('Restaurar Backup'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const RestoreScreen(),
                 ),
               ).then((_) => _carregarDados());
             },
