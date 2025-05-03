@@ -1,13 +1,14 @@
-
-
 import 'package:emprestimos/dao/obrigado_dao.dart';
 import 'package:emprestimos/dao/transacao_dao.dart';
 import 'package:emprestimos/database_helper.dart';
+
 import 'package:emprestimos/models/obrigado.dart';
 import 'package:emprestimos/models/transacao.dart';
 import 'package:emprestimos/screens/cadastro_obrigado_screen.dart';
 import 'package:emprestimos/screens/cadastro_transacao_screen.dart';
 import 'package:emprestimos/screens/estatisticas_screen.dart';
+import 'package:emprestimos/models/obrigado.dart';
+import 'package:emprestimos/models/transacao.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -28,6 +29,7 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime _currentMonth = DateTime.now();
   List<Obrigado> _obrigados = [];
   bool _isLoading = true;
+  bool _isSyncing = false;
   
   final NumberFormat _currencyFormat = NumberFormat.currency(
     locale: 'pt_BR',
@@ -239,6 +241,17 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.send), // ✅ Botão novo para envio automático
             onPressed: _enviarMensagensAutomaticamente,
           ),
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const CadastroTransacaoScreen()),
+              ).then((_) {
+                 _carregarTransacoes();
+              } );
+            },
+          ),
         ],
       ),
       drawer: _buildDrawer(),
@@ -320,6 +333,19 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
           ),
+          if (_isSyncing)
+            const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(width: 10),
+                  Text("Sincronizando..."),
+                ],
+              ),
+            ),
+
         ],
       ),
 
@@ -559,6 +585,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+
+
+
 }
 
 class ConfiguracaoService {
@@ -573,6 +602,7 @@ class ConfiguracaoService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_jurosPadraoKey, valor);
   }
+  
   
 
 }
