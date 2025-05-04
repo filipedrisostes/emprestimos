@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ConfiguracaoService {
   static const _jurosPadraoKey = 'juros_padrao';
   static const _diasVencimentoPadraoKey = 'dias_vencimento_padrao'; // ✅ Novo campo para dias vencimento
+  static const _emailPadraoKey = 'email_padrao';
 
   // Retorna o valor padrão de juros salvo
   static Future<double> getJurosPadrao() async {
@@ -23,10 +24,19 @@ class ConfiguracaoService {
     return dias ?? 30; // ✅ Se não tiver valor salvo, assume 30 dias
   }
 
-
   // ✅ Novo método: Atualiza dias de vencimento padrão
   static Future<void> setDiasVencimentoPadrao(int dias) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_diasVencimentoPadraoKey, dias);
+  }
+
+  static Future<String> getEmailPadrao() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_emailPadraoKey) ?? "Sem email definido";
+  }
+
+  static Future<void> setEmailPadrao(String email) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_emailPadraoKey, email);
   }
 }

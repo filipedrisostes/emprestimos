@@ -50,6 +50,7 @@ dependencies:
   google_sign_in: ^5.4.0
   googleapis: ^11.0.0
   http: ^0.13.4
+  path: ^1.8.3
   
 dev_dependencies:
   flutter_test:

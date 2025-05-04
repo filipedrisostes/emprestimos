@@ -8,7 +8,7 @@ import 'package:emprestimos/screens/cadastro_obrigado_screen.dart';
 import 'package:emprestimos/screens/cadastro_transacao_screen.dart';
 import 'package:emprestimos/screens/configuracao_screen.dart';
 import 'package:emprestimos/screens/estatisticas_screen.dart';
-import 'package:emprestimos/screens/restore_screen.dart';
+import 'package:emprestimos/screens/backup_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -504,7 +504,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const RestoreScreen(),
+                  builder: (context) => const BackupScreen(),
                 ),
               ).then((_) => _carregarDados());
             },

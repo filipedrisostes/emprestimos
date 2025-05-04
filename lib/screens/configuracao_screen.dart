@@ -30,6 +30,22 @@ class _ConfiguracaoScreenState extends State<ConfiguracaoScreen> {
     }
 
   @override
+  void initState() {
+    super.initState();
+     _carregarConfiguracoesSalvas();
+  }
+
+  Future<void> _carregarConfiguracoesSalvas() async {
+    final juros = await ConfiguracaoService.getJurosPadrao();
+    final email = await ConfiguracaoService.getEmailPadrao();
+
+    setState(() {
+      _jurosController.text = juros.toStringAsFixed(2).replaceAll('.', ',') + '%';
+      _emailController.text = email;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
