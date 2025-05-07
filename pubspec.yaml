@@ -51,6 +51,9 @@ dependencies:
   googleapis: ^11.0.0
   http: ^0.13.4
   path: ^1.8.3
+  connectivity_plus: ^4.0.0
+  #workmanager: ^0.5.2
+
   
 dev_dependencies:
   flutter_test:

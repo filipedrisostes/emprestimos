@@ -118,7 +118,10 @@ class _CadastroObrigadoScreenState extends State<CadastroObrigadoScreen> {
     // ✅ Novo campo de mensagem personalizada
     TextFormField(
       controller: _mensagemController,
-      decoration: const InputDecoration(labelText: 'Mensagem personalizada (opcional)'),
+      decoration: const InputDecoration(
+        labelText: 'Mensagem personalizada (opcional)',
+        border: OutlineInputBorder(),
+      ),
       maxLines: 3,
     ),
     const SizedBox(height: 24),

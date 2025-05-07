@@ -36,24 +36,37 @@ class Transacao {
   }
 
   factory Transacao.fromMap(Map<String, dynamic> map) {
-  return Transacao(
-    id: map['id'],
-    idObrigado: map['id_obrigado'] != null ? map['id_obrigado'] as int : 0,
-    dataEmprestimo: DateTime.parse(map['data_emprestimo']),
-    dataVencimento: map['dataVencimento'] != null
-        ? DateTime.parse(map['dataVencimento'])
-        : null,
-    valorEmprestado: (map['valor_emprestado'] ?? 0).toDouble(),
-    percentualJuros: (map['percentual_juros'] ?? 0).toDouble(),
-    retorno: (map['retorno'] ?? 0).toDouble(),
-    dataPagamentoRetorno: map['data_pagamento_retorno'] != null
-        ? DateTime.parse(map['data_pagamento_retorno'])
-        : null,
-    dataPagamentoCompleto: map['data_pagamento_completo'] != null
-        ? DateTime.parse(map['data_pagamento_completo'])
-        : null,
-  );
-}
+    return Transacao(
+      id: map['id'],
+      idObrigado: map['id_obrigado'] != null ? map['id_obrigado'] as int : 0,
+      dataEmprestimo: DateTime.parse(map['data_emprestimo']),
+      dataVencimento: map['dataVencimento'] != null
+          ? DateTime.parse(map['dataVencimento'])
+          : null,
+      valorEmprestado: (map['valor_emprestado'] ?? 0).toDouble(),
+      percentualJuros: (map['percentual_juros'] ?? 0).toDouble(),
+      retorno: (map['retorno'] ?? 0).toDouble(),
+      dataPagamentoRetorno: map['data_pagamento_retorno'] != null
+          ? DateTime.parse(map['data_pagamento_retorno'])
+          : null,
+      dataPagamentoCompleto: map['data_pagamento_completo'] != null
+          ? DateTime.parse(map['data_pagamento_completo'])
+          : null,
+    );
+  }
 
-
+  // Converter a instância para JSON (Map)
+  Map<String, dynamic> toJson() {
+    return {
+      if (id != null) 'id': id,
+      'id_obrigado': idObrigado,
+      'data_emprestimo': dataEmprestimo.toIso8601String(),
+      'valor_emprestado': valorEmprestado,
+      'percentual_juros': percentualJuros,
+      'retorno': retorno,
+      'data_pagamento_retorno': dataPagamentoRetorno?.toIso8601String(),
+      'data_pagamento_completo': dataPagamentoCompleto?.toIso8601String(),
+      'data_vencimento': dataVencimento?.toIso8601String(),
+    };
+  }
 }

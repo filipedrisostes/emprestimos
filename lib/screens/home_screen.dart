@@ -9,6 +9,8 @@ import 'package:emprestimos/screens/cadastro_transacao_screen.dart';
 import 'package:emprestimos/screens/configuracao_screen.dart';
 import 'package:emprestimos/screens/estatisticas_screen.dart';
 import 'package:emprestimos/screens/backup_screen.dart';
+import 'package:emprestimos/screens/lista_obrigados_screen.dart';
+import 'package:emprestimos/services/offline_sync_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -51,9 +53,12 @@ class _HomeScreenState extends State<HomeScreen> {
     if (numeroLimpo.startsWith('0') && numeroLimpo.length > 1) {
       numeroLimpo = numeroLimpo.substring(1);
     }
-    
+    String? mensagemPersonalizada = obrigado.mensagemPersonalizada;
+    mensagemPersonalizada = mensagemPersonalizada?.replaceAll('#', obrigado.nome); 
     final mensagem = Uri.encodeFull(
-      'Olá ${obrigado.nome}, tudo bem? Lembrando que o valor de ${_currencyFormat.format(valor)} vence este mês.'
+      mensagemPersonalizada != null 
+      ? mensagemPersonalizada
+      : 'Olá ${obrigado.nome}, tudo bem? Lembrando que o valor de ${_currencyFormat.format(valor)} vence este mês.'
     );
 
     final url = 'https://wa.me/$numeroLimpo?text=$mensagem';
@@ -130,10 +135,20 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
       
-      setState(() {
+      setState(()  {
         _totalReceber = total;
         _obrigados = obrigados;
         _isLoading = false;
+        // Enfileirar automaticamente ao carregar dados
+        /*final payload = {
+          'obrigados': _obrigados.map((o) => o.toJson()).toList(),
+          'transacoes': _transacoes.map((t) => t.toJson()).toList(),
+        };
+        await OfflineSyncService().enqueue(
+          'https://SEU_BACKEND_AQUI/sync', // ajuste para sua URL real
+          payload,
+        );*/
+        // —————————————————————
       });
     } catch (e) {
       setState(() => _isLoading = false);
@@ -223,23 +238,8 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('Empréstimos'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: (){
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const CadastroTransacaoScreen(),
-                ),
-              ).then((_) => _carregarTransacoes());
-            },
-          ),
-          IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _carregarDados,
-          ),
-          IconButton(
-            icon: const Icon(Icons.send), // ✅ Botão novo para envio automático
-            onPressed: _enviarMensagensAutomaticamente,
           ),
           IconButton(
             icon: const Icon(Icons.add),
@@ -353,60 +353,86 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildTransacaoCard(Transacao transacao, Obrigado obrigado) {
-    final hoje = DateTime.now();
-    final bool vencido = transacao.dataVencimento != null && transacao.dataVencimento!.isBefore(hoje);
+  final hoje = DateTime.now();
+  final bool vencido = transacao.dataVencimento != null && transacao.dataVencimento!.isBefore(hoje);
 
-    return Card(
-      margin: const EdgeInsets.all(8),
-      elevation: 2,
-      color: vencido ? Colors.red[100] : null, // ✅ Se vencido, deixa vermelho claro
-      child: ListTile(
-        title: Text(obrigado.nome),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            //Text('zap: ${obrigado.zap}'),
-            Text('Valor: ${_currencyFormat.format(transacao.valorEmprestado)}'),
-            Text('Juros: ${transacao.percentualJuros}%'),
-            Text('Total: ${_currencyFormat.format(transacao.retorno)}'),
-            if (transacao.dataVencimento != null)
-              Text('Vencimento: ${DateFormat('dd/MM/yyyy').format(transacao.dataVencimento!)}'), 
-            if (transacao.dataPagamentoCompleto != null)
-              Text(
-                'Pago em: ${DateFormat('dd/MM/yyyy').format(transacao.dataPagamentoCompleto!)}',
-                style: const TextStyle(color: Colors.green),
-              ),
-            if (transacao.dataPagamentoRetorno != null)
-              Text(
-                'Juros pagos em: ${DateFormat('dd/MM/yyyy').format(transacao.dataPagamentoRetorno!)}',
-                style: const TextStyle(color: Colors.blue),
-              ),
-          ],
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (transacao.dataPagamentoCompleto == null)
-              IconButton(
-                icon: const Icon(Icons.attach_money, color: Colors.green),
-                tooltip: 'Marcar como totalmente pago',
-                onPressed: () => _marcarComoPagoTotal(transacao),
-              ),
-            if (transacao.dataPagamentoCompleto == null)
-              IconButton(
-                icon: const Icon(Icons.percent, color: Colors.blue),
-                tooltip: 'Pagar apenas juros',
-                onPressed: () => _marcarComoPagoJuros(transacao),
-              ),
-            IconButton(
-              icon: const Icon(Icons.phone_android, color: Colors.green),
-              onPressed: () => _enviarWhatsApp(obrigado, transacao.valorEmprestado),
-            )  
-          ],
-        ),
+  return Card(
+    margin: const EdgeInsets.all(8),
+    elevation: 2,
+    color: vencido ? Colors.red[100] : null,
+    child: ListTile(
+      title: Text(obrigado.nome),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Valor: ${_currencyFormat.format(transacao.valorEmprestado)}'),
+          Text('Juros: ${transacao.percentualJuros}%'),
+          Text('Total: ${_currencyFormat.format(transacao.retorno)}'),
+          if (transacao.dataVencimento != null)
+            Text('Vencimento: ${DateFormat('dd/MM/yyyy').format(transacao.dataVencimento!)}'),
+          if (transacao.dataPagamentoCompleto != null)
+            Text('Pago em: ${DateFormat('dd/MM/yyyy').format(transacao.dataPagamentoCompleto!)}', style: const TextStyle(color: Colors.green)),
+          if (transacao.dataPagamentoRetorno != null)
+            Text('Juros pagos em: ${DateFormat('dd/MM/yyyy').format(transacao.dataPagamentoRetorno!)}', style: const TextStyle(color: Colors.blue)),
+        ],
       ),
-    );
-  }
+      trailing: Wrap(
+        spacing: -16,
+        children: [
+          if (transacao.dataPagamentoCompleto == null)
+            IconButton(
+              icon: const Icon(Icons.attach_money, color: Colors.green),
+              tooltip: 'Marcar como totalmente pago',
+              onPressed: () => _marcarComoPagoTotal(transacao),
+            ),
+          if (transacao.dataPagamentoCompleto == null)
+            IconButton(
+              icon: const Icon(Icons.percent, color: Colors.blue),
+              tooltip: 'Pagar apenas juros',
+              onPressed: () => _marcarComoPagoJuros(transacao),
+            ),
+          IconButton(
+            icon: const Icon(Icons.edit, color: Colors.orange),
+            tooltip: 'Editar Transação',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => CadastroTransacaoScreen(transacao: transacao),
+                ),
+              ).then((_) => _carregarDados());
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete, color: Colors.red),
+            tooltip: 'Excluir Transação',
+            onPressed: () async {
+              final confirmar = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Excluir Transação'),
+                  content: const Text('Tem certeza que deseja excluir esta transação?'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+                    TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Excluir')),
+                  ],
+                ),
+              );
+              if (confirmar == true) {
+                await _transacaoDao.deleteTransacao(transacao.id);
+                await _carregarDados();
+              }
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.phone_android, color: Colors.green),
+            onPressed: () => _enviarWhatsApp(obrigado, transacao.valorEmprestado),
+          )
+        ],
+      ),
+    ),
+  );
+} // fim _buildTransacaoCard
 
   Widget _buildTotalReceber() {
     return Container(
@@ -459,13 +485,13 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.person_add),
-            title: const Text('Cadastrar Obrigado'),
+            title: const Text('Obrigados'),
             onTap: () {
               Navigator.pop(context);
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const CadastroObrigadoScreen(),
+                  builder: (context) => const ListaObrigadosScreen(),
                 ),
               ).then((_) => _carregarDados());
             },
@@ -498,7 +524,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.restore_page),
-            title: const Text('Restaurar Backup'),
+            title: const Text('Backup e restauração'),
             onTap: () {
               Navigator.pop(context);
               Navigator.push(
@@ -514,54 +540,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _abrirConfigJuros(BuildContext context) {
-    final jurosController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return FutureBuilder<double>(
-          future: ConfiguracaoService.getJurosPadrao(),
-          builder: (context, snapshot) {
-            if (snapshot.hasData) {
-              jurosController.text = snapshot.data!.toStringAsFixed(2);
-              return AlertDialog(
-                title: const Text('Configurar Juros Padrão'),
-                content: TextField(
-                  controller: jurosController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Juros Padrão (%)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancelar'),
-                  ),
-                  TextButton(
-                    onPressed: () async {
-                      final juros = double.tryParse(jurosController.text) ?? 0;
-                      await ConfiguracaoService.setJurosPadrao(juros);
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Juros padrão atualizado!')),
-                      );
-                    },
-                    child: const Text('Salvar'),
-                  ),
-                ],
-              );
-            }
-            return const AlertDialog(
-              content: Center(child: CircularProgressIndicator()),
-            );
-          },
-        );
-      },
-    );
-  }
 
   String _capitalize(String text) {
     if (text.isEmpty) return text;
