@@ -240,11 +240,7 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('Empréstimos'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.sync),
-            tooltip: 'Sincronizar com o servidor',
-            onPressed: _sincronizarDados,
-          ),
+          
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () {
