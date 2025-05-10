@@ -1,72 +1,83 @@
-import 'package:sqflite/sqflite.dart';
+import 'dart:async';
 import 'package:path/path.dart';
+import 'package:sqflite/sqflite.dart';
 
 class DatabaseHelper {
-  static final DatabaseHelper instance = DatabaseHelper._init();
+  static const _dbName = 'emprestimos.db';
+  static const _dbVersion = 1; // Incrementado de 1 para 2
   static Database? _database;
-  static const int _databaseVersion = 3; 
 
-  DatabaseHelper._init();
+  DatabaseHelper._privateConstructor();
+  static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('emprestimos.db');
+    _database = await _initDatabase();
     return _database!;
   }
 
-  Future<Database> _initDB(String filePath) async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, filePath);
-
+  Future<Database> _initDatabase() async {
+    final databasesPath = await getDatabasesPath();
+    final path = join(databasesPath, _dbName);
     return await openDatabase(
-      path, 
-      version: _databaseVersion, 
-      onCreate: _createDB,
-      onUpgrade: _onUpgrade, // ✅ Adiciona suporte a upgrades
+      path,
+      version: _dbVersion,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgradeWithCheck, // alterado para chamar método com verificação
+      onOpen: (db) async {
+        await _onUpgradeWithCheck(db, _dbVersion, _dbVersion);
+      },
     );
   }
 
-  Future _createDB(Database db, int version) async {
+  FutureOr<void> _onCreate(Database db, int version) async {
     await db.execute('''
-      CREATE TABLE obrigado (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+      CREATE TABLE obrigados (
+        id INTEGER PRIMARY KEY,
         nome TEXT NOT NULL,
-        zap TEXT NOT NULL
-      )
+        zap TEXT NOT NULL,
+        mensagem_personalizada TEXT
+      );
     ''');
 
     await db.execute('''
-      CREATE TABLE transacao (
+      CREATE TABLE transacoes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         id_obrigado INTEGER NOT NULL,
         data_emprestimo TEXT NOT NULL,
-        valor_emprestado REAL NOT NULL,
+        valor_empresado REAL NOT NULL,
         percentual_juros REAL NOT NULL,
         retorno REAL NOT NULL,
         data_pagamento_retorno TEXT,
         data_pagamento_completo TEXT,
-        FOREIGN KEY (id_obrigado) REFERENCES obrigado (id)
-      )
+        data_vencimento TEXT,
+        FOREIGN KEY (id_obrigado) REFERENCES obrigados (id)
+      );
     ''');
   }
-  // ✅ Novo método para atualização de estrutura de banco
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+
+  FutureOr<void> _onUpgradeWithCheck(Database db, int oldVersion, int newVersion) async {
+    // Verifica se tabelas essenciais existem, caso contrário executa onCreate manualmente
+    final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='obrigados'");
+    if (tables.isEmpty) {
+      await _onCreate(db, newVersion); // força criação das tabelas
+      return;
+    }
+
+    // Executa atualizações de versão se necessário
     if (oldVersion < 2) {
-      // Atualizações para versão 2
-      await db.execute('ALTER TABLE obrigado ADD COLUMN mensagemPersonalizada TEXT;');
-      await db.execute('ALTER TABLE transacao ADD COLUMN dataVencimento TEXT;');
+      final obrigadosColumns = await db.rawQuery("PRAGMA table_info(obrigados)");
+      final transacoesColumns = await db.rawQuery("PRAGMA table_info(transacoes)");
+
+      final temMensagem = obrigadosColumns.any((c) => c['name'] == 'mensagem_personalizada');
+      final temVencimento = transacoesColumns.any((c) => c['name'] == 'data_vencimento');
+
+      if (!temMensagem) {
+        await db.execute('ALTER TABLE obrigados ADD COLUMN mensagem_personalizada TEXT;');
+      }
+      if (!temVencimento) {
+        await db.execute('ALTER TABLE transacoes ADD COLUMN data_vencimento TEXT;');
+      }
     }
-
-    if (oldVersion < 3) {
-      // Atualizações para versão 3
-      await db.execute('UPDATE transacao SET dataVencimento = datetime(data_emprestimo, \'+30 days\') WHERE dataVencimento IS NULL;');
-    }
-
-    // Se no futuro subir para 3, 4, 5... adiciona novos if aqui
-  }
-
-  Future close() async {
-    final db = await instance.database;
-    db.close();
   }
 }

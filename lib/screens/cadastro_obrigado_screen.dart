@@ -118,7 +118,10 @@ class _CadastroObrigadoScreenState extends State<CadastroObrigadoScreen> {
     // ✅ Novo campo de mensagem personalizada
     TextFormField(
       controller: _mensagemController,
-      decoration: const InputDecoration(labelText: 'Mensagem personalizada (opcional)'),
+      decoration: const InputDecoration(
+        labelText: 'Mensagem personalizada (opcional)',
+        border: OutlineInputBorder(),
+      ),
       maxLines: 3,
     ),
     const SizedBox(height: 24),
@@ -230,7 +233,7 @@ class _CadastroObrigadoScreenState extends State<CadastroObrigadoScreen> {
       );
       
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Obrigado cadastrado com sucesso!')),
+        const SnackBar(content: Text('Cliente cadastrado com sucesso!')),
       );
       
       _nomeController.clear();
@@ -278,7 +281,7 @@ class _CadastroObrigadoScreenState extends State<CadastroObrigadoScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Cadastrar Obrigados'),
+        title: const Text('Cadastrar Cliente'),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),

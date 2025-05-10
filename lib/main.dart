@@ -1,18 +1,35 @@
+import 'package:emprestimos/background_backup.dart';
+import 'package:emprestimos/database_helper.dart';
 import 'package:emprestimos/screens/home_screen.dart';
+import 'package:emprestimos/services/offline_sync_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart';
-import 'package:dotenv/dotenv.dart';
+//import 'package:workmanager/workmanager.dart';
 
-final DotEnv env = DotEnv()..load();  // Carrega o .env manualmente
+// Defina AQUI o mesmo nome da task do background_backup.dart
+const String _backupTask = "periodicBackup";
 
-void main() async {
-  final host = env['DB_HOST'];
-  final port = int.parse(env['DB_PORT'] ?? '5432');
-  final user = env['DB_USER'];
-  final pass = env['DB_PASSWORD'];
-  final dbName = env['DB_NAME'];
+void main() async{
+  WidgetsFlutterBinding.ensureInitialized();
   Intl.defaultLocale = 'pt_BR';
+    // 1) inicializa o dispatcher
+  /*Workmanager().initialize(
+    callbackDispatcher,
+    isInDebugMode: false, // true = mais logs
+  );
+
+  // 2) registra a tarefa periódica (a cada 24h)
+  Workmanager().registerPeriodicTask(
+    '1',
+    _backupTask,
+    frequency: Duration(hours: 24),
+    existingWorkPolicy: ExistingWorkPolicy.keep,
+  );*/
+  // Inicializa o listener de conectividade
+  OfflineSyncService();  // apenas instanciar já dispara o listener
+  await DatabaseHelper.instance.database; // força inicialização
+
   runApp(const MyApp());
 }
 
@@ -43,74 +60,3 @@ class MyApp extends StatelessWidget {
     );
   }
 }
-
-// class HomeScreen extends StatelessWidget {
-//   const HomeScreen({super.key});
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return Scaffold(
-//       appBar: AppBar(
-//         title: const Text('Gerenciador de Empréstimos'),
-        
-//       ),
-//       drawer: Drawer(
-//         child: ListView(
-//           padding: EdgeInsets.zero,
-//           children: [
-//             const DrawerHeader(
-//               decoration: BoxDecoration(
-//                 color: Colors.blue,
-//               ),
-//               child: Text('Menu'),
-//             ),
-//             ListTile(
-//               leading: const Icon(Icons.person_add),
-//               title: const Text('Cadastrar Pessoa'),
-//               onTap: () {
-//                 Navigator.pop(context); // Fecha o drawer
-//                 Navigator.push(
-//                   context,
-//                   MaterialPageRoute(
-//                     builder: (context) => const CadastroObrigadoScreen(),
-//                   ),
-//                 );
-//               },
-//             ),
-//             // Adicione mais itens do menu aqui
-//           ],
-//         ),
-//       ),
-//       body: Center(
-//         child: Column(
-//           mainAxisAlignment: MainAxisAlignment.center,
-//           children: [
-//             ElevatedButton(
-//               onPressed: () {
-//                 Navigator.push(
-//                   context,
-//                   MaterialPageRoute(
-//                     builder: (context) => const ListaObrigadosScreen(),
-//                   ),
-//                 );
-//               },
-//               child: const Text('Visualizar Obrigados'),
-//             ),
-//             const SizedBox(height: 20),
-//             ElevatedButton(
-//               onPressed: () {
-//                 Navigator.push(
-//                   context,
-//                   MaterialPageRoute(
-//                     builder: (context) => const CadastroObrigadoScreen(),
-//                   ),
-//                 );
-//               },
-//               child: const Text('Cadastrar Obrigado'),
-//             ),
-//           ],
-//         ),
-//       ),
-//     );
-//   }
-// }

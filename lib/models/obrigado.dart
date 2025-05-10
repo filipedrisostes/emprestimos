@@ -16,7 +16,7 @@ class Obrigado {
       'id': id,
       'nome': nome,
       'zap': zap,
-      'mensagemPersonalizada': mensagemPersonalizada, // ✅ Adicionado aqui também
+      'mensagem_personalizada': mensagemPersonalizada, // ✅ Adicionado aqui também
     };
   }
 
@@ -37,4 +37,24 @@ class Obrigado {
       mensagemPersonalizada: map['mensagemPersonalizada'], // ✅ Carregar o novo campo
     );
   }
+
+  // Converter a instância para JSON (Map)
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'nome': nome,
+      'zap': zap,
+      'mensagem_personalizada': mensagemPersonalizada ?? '',
+    };
+  }
+  
+  // Criar uma instância a partir de JSON (Map)
+  factory Obrigado.fromJson(Map<String, dynamic> json) {
+    return Obrigado(
+      id: json['id'],
+      nome: json['nome'],
+      zap: json['zap'],
+      mensagemPersonalizada: json['mensagem_personalizada'], // ✅ Carregar o novo campo
+    );
+  }  
 }
