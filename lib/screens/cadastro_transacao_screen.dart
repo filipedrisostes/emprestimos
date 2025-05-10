@@ -143,16 +143,17 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
   Future<void> _salvarTransacao() async {
     if (_formKey.currentState!.validate() && _selectedObrigado != null) {
       final transacao = Transacao(
-        id: widget.transacao!.id,
+        id: _isEditing ? widget.transacao!.id : null,
         idObrigado: _selectedObrigado!.id!,
         dataEmprestimo: _dataEmprestimo,
-        dataVencimento: _dataVencimento, // ✅ Salva o vencimento
+        dataVencimento: _dataVencimento,
         valorEmprestado: _extrairValorNumerico(_valorController.text),
         percentualJuros: _extrairValorNumerico(_jurosController.text),
         retorno: _extrairValorNumerico(_retornoController.text),
         dataPagamentoRetorno: _isEditing ? widget.transacao!.dataPagamentoRetorno : null,
         dataPagamentoCompleto: _isEditing ? widget.transacao!.dataPagamentoCompleto : null,
       );
+
 
       if (_isEditing) {
         await _transacaoDao.updateTransacao(transacao);

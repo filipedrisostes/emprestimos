@@ -11,9 +11,8 @@ class TransacaoDao {
   Future<int> insertTransacao(Transacao transacao) async {
     final db = await dbHelper.database;
     return await db.insert(
-      'transacao',
+      'transacoes',
       transacao.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
 
@@ -21,7 +20,7 @@ class TransacaoDao {
   Future<int> updateTransacao(Transacao transacao) async {
     final db = await dbHelper.database;
     return await db.update(
-      'transacao',
+      'transacoes',
       transacao.toMap(),
       where: 'id = ?',
       whereArgs: [transacao.id],
@@ -32,7 +31,7 @@ class TransacaoDao {
   Future<int> deleteTransacao(int id) async {
     final db = await dbHelper.database;
     return await db.delete(
-      'transacao',
+      'transacoes',
       where: 'id = ?',
       whereArgs: [id],
     );
@@ -42,12 +41,12 @@ class TransacaoDao {
   Future<Transacao?> getTransacaoById(int id) async {
     final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
-      'transacao',
+      'transacoes',
       where: 'id = ?',
       whereArgs: [id],
       limit: 1,
     );
-    
+
     if (maps.isNotEmpty) {
       return Transacao.fromMap(maps.first);
     }
@@ -57,7 +56,7 @@ class TransacaoDao {
   // Lista todas as transações
   Future<List<Transacao>> getAllTransacoes() async {
     final db = await dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query('transacao');
+    final List<Map<String, dynamic>> maps = await db.query('transacoes');
     return List.generate(maps.length, (i) => Transacao.fromMap(maps[i]));
   }
 
@@ -65,7 +64,7 @@ class TransacaoDao {
   Future<List<Transacao>> getTransacoesByObrigado(int idObrigado) async {
     final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
-      'transacao',
+      'transacoes',
       where: 'id_obrigado = ?',
       whereArgs: [idObrigado],
     );
@@ -76,7 +75,7 @@ class TransacaoDao {
   Future<int> updateDataPagamentoRetorno(int idTransacao, DateTime data) async {
     final db = await dbHelper.database;
     return await db.update(
-      'transacao',
+      'transacoes',
       {'data_pagamento_retorno': data.toIso8601String()},
       where: 'id = ?',
       whereArgs: [idTransacao],
@@ -87,7 +86,7 @@ class TransacaoDao {
   Future<int> updateDataPagamentoCompleto(int idTransacao, DateTime data) async {
     final db = await dbHelper.database;
     return await db.update(
-      'transacao',
+      'transacoes',
       {'data_pagamento_completo': data.toIso8601String()},
       where: 'id = ?',
       whereArgs: [idTransacao],
@@ -98,7 +97,7 @@ class TransacaoDao {
   Future<List<Transacao>> getTransacoesByPeriodo(DateTime inicio, DateTime fim) async {
     final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
-      'transacao',
+      'transacoes',
       where: 'data_emprestimo BETWEEN ? AND ?',
       whereArgs: [
         inicio.toIso8601String(),
@@ -106,8 +105,8 @@ class TransacaoDao {
       ],
     );
 
-     print('Resultado da consulta: $maps'); // 👈 Adiciona isso
+    print('Resultado da consulta: $maps');
 
     return List.generate(maps.length, (i) => Transacao.fromMap(maps[i]));
-  }  
+  }
 }

@@ -4,7 +4,7 @@ import 'package:sqflite/sqflite.dart';
 
 class DatabaseHelper {
   static const _dbName = 'emprestimos.db';
-  static const _dbVersion = 2; // Incrementado de 1 para 2
+  static const _dbVersion = 1; // Incrementado de 1 para 2
   static Database? _database;
 
   DatabaseHelper._privateConstructor();
@@ -23,12 +23,14 @@ class DatabaseHelper {
       path,
       version: _dbVersion,
       onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
+      onUpgrade: _onUpgradeWithCheck, // alterado para chamar método com verificação
+      onOpen: (db) async {
+        await _onUpgradeWithCheck(db, _dbVersion, _dbVersion);
+      },
     );
   }
 
   FutureOr<void> _onCreate(Database db, int version) async {
-    // Cria tabelas iniciais
     await db.execute('''
       CREATE TABLE obrigados (
         id INTEGER PRIMARY KEY,
@@ -54,18 +56,28 @@ class DatabaseHelper {
     ''');
   }
 
-  FutureOr<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) {
-      // Adiciona coluna mensagem_personalizada em obrigados
-      await db.execute('''
-        ALTER TABLE obrigados ADD COLUMN mensagem_personalizada TEXT;
-      ''');
-      // Adiciona coluna data_vencimento em transacoes
-      await db.execute('''
-        ALTER TABLE transacoes ADD COLUMN data_vencimento TEXT;
-      ''');
+  FutureOr<void> _onUpgradeWithCheck(Database db, int oldVersion, int newVersion) async {
+    // Verifica se tabelas essenciais existem, caso contrário executa onCreate manualmente
+    final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='obrigados'");
+    if (tables.isEmpty) {
+      await _onCreate(db, newVersion); // força criação das tabelas
+      return;
     }
-    // Futuros upgrades podem ser tratados aqui:
-    // if (oldVersion < 3) { ... }
+
+    // Executa atualizações de versão se necessário
+    if (oldVersion < 2) {
+      final obrigadosColumns = await db.rawQuery("PRAGMA table_info(obrigados)");
+      final transacoesColumns = await db.rawQuery("PRAGMA table_info(transacoes)");
+
+      final temMensagem = obrigadosColumns.any((c) => c['name'] == 'mensagem_personalizada');
+      final temVencimento = transacoesColumns.any((c) => c['name'] == 'data_vencimento');
+
+      if (!temMensagem) {
+        await db.execute('ALTER TABLE obrigados ADD COLUMN mensagem_personalizada TEXT;');
+      }
+      if (!temVencimento) {
+        await db.execute('ALTER TABLE transacoes ADD COLUMN data_vencimento TEXT;');
+      }
+    }
   }
 }

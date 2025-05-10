@@ -20,8 +20,10 @@ class ConfiguracaoService {
   // ✅ Novo método: Retorna dias de vencimento padrão (default 30)
   static Future<int> getDiasVencimentoPadrao() async {
     final prefs = await SharedPreferences.getInstance();
-    final dias = prefs.getInt(_diasVencimentoPadraoKey);
-    return dias ?? 30; // ✅ Se não tiver valor salvo, assume 30 dias
+    final raw = prefs.get(_diasVencimentoPadraoKey);
+    if (raw is int) return raw;
+    if (raw is String) return int.tryParse(raw) ?? 30;
+    return 30;
   }
 
   // ✅ Novo método: Atualiza dias de vencimento padrão

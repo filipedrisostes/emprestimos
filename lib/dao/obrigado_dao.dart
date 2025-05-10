@@ -8,12 +8,12 @@ class ObrigadoDao {
 
   Future<int> insertObrigado(Obrigado obrigado) async {
     final db = await dbHelper.database;
-    return await db.insert('obrigado', obrigado.toMap());
+    return await db.insert('obrigados', obrigado.toMap());
   }
 
   Future<List<Obrigado>> getAllObrigados() async {
     final db = await dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query('obrigado');
+    final List<Map<String, dynamic>> maps = await db.query('obrigados');
     return List.generate(maps.length, (i) {
       return Obrigado.fromMap(maps[i]);
     });
@@ -22,7 +22,7 @@ class ObrigadoDao {
   Future<int> updateObrigado(Obrigado obrigado) async {
     final db = await dbHelper.database;
     return await db.update(
-      'obrigado',
+      'obrigados',
       obrigado.toMap(),
       where: 'id = ?',
       whereArgs: [obrigado.id],
@@ -32,17 +32,16 @@ class ObrigadoDao {
   Future<int> deleteObrigado(int id) async {
     final db = await dbHelper.database;
     return await db.delete(
-      'obrigado',
+      'obrigados',
       where: 'id = ?',
       whereArgs: [id],
     );
   }
 
-  // Adicione este método à classe ObrigadoDao
   Future<Obrigado?> getObrigadoById(int id) async {
     final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
-      'obrigado',
+      'obrigados',
       where: 'id = ?',
       whereArgs: [id],
       limit: 1,
@@ -52,5 +51,4 @@ class ObrigadoDao {
     }
     return null;
   }
-  
 }

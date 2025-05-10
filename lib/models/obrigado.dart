@@ -16,7 +16,7 @@ class Obrigado {
       'id': id,
       'nome': nome,
       'zap': zap,
-      'mensagemPersonalizada': mensagemPersonalizada, // ✅ Adicionado aqui também
+      'mensagem_personalizada': mensagemPersonalizada, // ✅ Adicionado aqui também
     };
   }
 

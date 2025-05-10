@@ -32,7 +32,7 @@ class _ListaObrigadosScreenState extends State<ListaObrigadosScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Lista de Obrigados'),
+        title: const Text('Lista de Clientes'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -58,7 +58,7 @@ class _ListaObrigadosScreenState extends State<ListaObrigadosScreen> {
           } else if (snapshot.hasError) {
             return Center(child: Text('Erro: ${snapshot.error}'));
           } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text('Nenhum obrigado cadastrado.'));
+            return const Center(child: Text('Nenhum cliente cadastrado.'));
           } else {
             final obrigados = snapshot.data!;
             return ListView.builder(

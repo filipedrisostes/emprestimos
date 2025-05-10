@@ -88,16 +88,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }  
 
-  Future<void> _carregarTransacoes() async {
-    final primeiroDia = DateTime(_currentMonth.year, _currentMonth.month, 1);
-    final ultimoDia = DateTime(_currentMonth.year, _currentMonth.month + 1, 0);
-    
-    final transacoes = await _transacaoDao.getTransacoesByPeriodo(primeiroDia, ultimoDia);
-    setState(() {
-      _transacoes = transacoes;
-    });
-  }
-
   void _proximoMes() {
     setState(() {
       _currentMonth = DateTime(_currentMonth.year, _currentMonth.month + 1, 1);
@@ -178,7 +168,11 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     if (confirmado == true) {
-      await _transacaoDao.updateDataPagamentoCompleto(transacao.id, DateTime.now());
+      if (transacao.id != null) {
+        await _transacaoDao.updateDataPagamentoCompleto(transacao.id!, DateTime.now());
+      } else {
+        throw Exception('Transação ID não pode ser nulo');
+      }
       await _carregarDados();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Pagamento registrado com sucesso!')),
@@ -187,28 +181,37 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _marcarComoPagoJuros(Transacao transacao) async {
-    await _transacaoDao.updateDataPagamentoRetorno(transacao.id, DateTime.now());
-    
-    // Cria nova transação para o próximo mês
-    final novaTransacao = Transacao(
-      id: transacao.id,
-      idObrigado: transacao.idObrigado,
-      dataEmprestimo: DateTime(
-        transacao.dataEmprestimo.year,
-        transacao.dataEmprestimo.month + 1,
-        transacao.dataEmprestimo.day,
-      ),
-      valorEmprestado: transacao.valorEmprestado,
-      percentualJuros: transacao.percentualJuros,
-      retorno: transacao.retorno,
-    );
-    
-    await _transacaoDao.insertTransacao(novaTransacao);
-    await _carregarDados();
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Juros pagos e nova transação criada!')),
-    );
+    try {
+      if (transacao.id != null) {
+        await _transacaoDao.updateDataPagamentoRetorno(transacao.id!, DateTime.now());
+        
+        final novaTransacao = Transacao(
+          id: null, // Corrigido aqui
+          idObrigado: transacao.idObrigado,
+          dataEmprestimo: DateTime(
+            transacao.dataEmprestimo.year,
+            transacao.dataEmprestimo.month + 1,
+            transacao.dataEmprestimo.day,
+          ),
+          valorEmprestado: transacao.valorEmprestado,
+          percentualJuros: transacao.percentualJuros,
+          retorno: transacao.retorno,
+        );
+        
+        await _transacaoDao.insertTransacao(novaTransacao);
+        await _carregarDados();
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Juros pagos e nova transação criada!')),
+        );
+      } else {
+        throw Exception('Transação ID não pode ser nulo');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao processar pagamento: ${e.toString()}')),
+      );
+    }
   }
 
   Obrigado _encontrarObrigado(int? idObrigado) {
@@ -248,7 +251,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 context,
                 MaterialPageRoute(builder: (context) => const CadastroTransacaoScreen()),
               ).then((_) {
-                 _carregarTransacoes();
+                 _carregarDados();
               } );
             },
           ),
@@ -354,12 +357,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildTransacaoCard(Transacao transacao, Obrigado obrigado) {
   final hoje = DateTime.now();
-  final bool vencido = transacao.dataVencimento != null && transacao.dataVencimento!.isBefore(hoje);
-
+  var corCard;
+  if(transacao.dataPagamentoCompleto != null){
+    corCard = Colors.green[100];
+  }
+  else if (transacao.dataPagamentoRetorno != null){
+    corCard = Colors.blue[100];
+  }
+  else if (transacao.dataVencimento != null && transacao.dataVencimento!.isBefore(hoje)){
+    corCard = Colors.red[100];
+  }
+  else{
+    corCard = null;
+  }
   return Card(
     margin: const EdgeInsets.all(8),
     elevation: 2,
-    color: vencido ? Colors.red[100] : null,
+    color: corCard,
     child: ListTile(
       title: Text(obrigado.nome),
       subtitle: Column(
@@ -369,15 +383,15 @@ class _HomeScreenState extends State<HomeScreen> {
           Text('Juros: ${transacao.percentualJuros}%'),
           Text('Total: ${_currencyFormat.format(transacao.retorno)}'),
           if (transacao.dataVencimento != null)
-            Text('Vencimento: ${DateFormat('dd/MM/yyyy').format(transacao.dataVencimento!)}'),
+            Text('Prazo: ${DateFormat('dd/MM/yyyy').format(transacao.dataVencimento!)}'),
           if (transacao.dataPagamentoCompleto != null)
-            Text('Pago em: ${DateFormat('dd/MM/yyyy').format(transacao.dataPagamentoCompleto!)}', style: const TextStyle(color: Colors.green)),
+            Text('Pago em: ${DateFormat('dd/MM/yyyy').format(transacao.dataPagamentoCompleto!)}'),
           if (transacao.dataPagamentoRetorno != null)
-            Text('Juros pagos em: ${DateFormat('dd/MM/yyyy').format(transacao.dataPagamentoRetorno!)}', style: const TextStyle(color: Colors.blue)),
+            Text('Juros pagos em: ${DateFormat('dd/MM/yyyy').format(transacao.dataPagamentoRetorno!)}'),
         ],
       ),
       trailing: Wrap(
-        spacing: -16,
+        spacing: -20,
         children: [
           if (transacao.dataPagamentoCompleto == null)
             IconButton(
@@ -419,7 +433,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               );
               if (confirmar == true) {
-                await _transacaoDao.deleteTransacao(transacao.id);
+                if (transacao.id != null) {
+                  await _transacaoDao.deleteTransacao(transacao.id!);
+                } else {
+                  throw Exception('Transação ID não pode ser nulo');
+                }
                 await _carregarDados();
               }
             },
@@ -485,7 +503,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.person_add),
-            title: const Text('Obrigados'),
+            title: const Text('Clientes'),
             onTap: () {
               Navigator.pop(context);
               Navigator.push(

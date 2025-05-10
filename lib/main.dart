@@ -1,4 +1,5 @@
 import 'package:emprestimos/background_backup.dart';
+import 'package:emprestimos/database_helper.dart';
 import 'package:emprestimos/screens/home_screen.dart';
 import 'package:emprestimos/services/offline_sync_service.dart';
 import 'package:flutter/material.dart';
@@ -9,7 +10,7 @@ import 'package:intl/intl.dart';
 // Defina AQUI o mesmo nome da task do background_backup.dart
 const String _backupTask = "periodicBackup";
 
-void main() {
+void main() async{
   WidgetsFlutterBinding.ensureInitialized();
   Intl.defaultLocale = 'pt_BR';
     // 1) inicializa o dispatcher
@@ -27,6 +28,7 @@ void main() {
   );*/
   // Inicializa o listener de conectividade
   OfflineSyncService();  // apenas instanciar já dispara o listener
+  await DatabaseHelper.instance.database; // força inicialização
 
   runApp(const MyApp());
 }
