@@ -370,7 +370,7 @@ class _HomeScreenState extends State<HomeScreen> {
   else{
     corCard = null;
   }
-  return Card(
+  return Card( 
     margin: const EdgeInsets.all(8),
     elevation: 2,
     color: corCard,
