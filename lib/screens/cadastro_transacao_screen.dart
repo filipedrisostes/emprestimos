@@ -1,5 +1,6 @@
 import 'package:emprestimos/configuracao_service.dart';
 import 'package:emprestimos/currency_input_formatter.dart';
+import 'package:emprestimos/services/notificacao_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -154,12 +155,21 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
         dataPagamentoCompleto: _isEditing ? widget.transacao!.dataPagamentoCompleto : null,
       );
 
-
+      int id = -1; // Initialize with a default value
       if (_isEditing) {
         await _transacaoDao.updateTransacao(transacao);
+        id = widget.transacao!.id!; // Use the existing ID when editing
       } else {
-        await _transacaoDao.insertTransacao(transacao);
+        id = await _transacaoDao.insertTransacao(transacao);
       }
+      
+      if (_dataVencimento != null) {
+          await NotificationService.agendarNotificacaoVencimento(
+            id: id,
+            nomeObrigado: _selectedObrigado!.nome,
+            dataVencimento: _dataVencimento!,
+          );
+        }
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(_isEditing 

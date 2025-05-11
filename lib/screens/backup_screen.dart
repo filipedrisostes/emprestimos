@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:emprestimos/services/backup_service.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
@@ -78,12 +79,16 @@ class _BackupScreenState extends State<BackupScreen> {
             const SizedBox(height: 20),
             ElevatedButton(
               onPressed: _fazerBackup,
-              child: const Text('Fazer Backup'),
+              child: const Text('Fazer Backup no Google Drive'),
             ),
             const SizedBox(height: 10),
             ElevatedButton(
               onPressed: _restaurarBackup,
               child: const Text('Restaurar Backup'),
+            ),
+            ElevatedButton(
+              onPressed: () => realizarBackupLocal(context),
+              child: const Text('Fazer Backup Local'),
             ),
           ],
         ),

@@ -1,18 +1,28 @@
 import 'package:emprestimos/background_backup.dart';
 import 'package:emprestimos/database_helper.dart';
 import 'package:emprestimos/screens/home_screen.dart';
+import 'package:emprestimos/services/notificacao_service.dart';
 import 'package:emprestimos/services/offline_sync_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart';
 //import 'package:workmanager/workmanager.dart';
 
 // Defina AQUI o mesmo nome da task do background_backup.dart
 const String _backupTask = "periodicBackup";
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
 void main() async{
   WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.initialize(); // 🔁 Isso deve vir ANTES de qualquer uso do tz.local
   Intl.defaultLocale = 'pt_BR';
+  /*const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const InitializationSettings initializationSettings = InitializationSettings(
+    android: initializationSettingsAndroid,
+  );
+  await flutterLocalNotificationsPlugin.initialize(initializationSettings);*/
+
     // 1) inicializa o dispatcher
   /*Workmanager().initialize(
     callbackDispatcher,
