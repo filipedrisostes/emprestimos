@@ -55,6 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     String? mensagemPersonalizada = obrigado.mensagemPersonalizada;
     mensagemPersonalizada = mensagemPersonalizada?.replaceAll('#', obrigado.nome); 
+    mensagemPersonalizada = mensagemPersonalizada?.replaceAll('%', _currencyFormat.format(valor)); 
     final mensagem = Uri.encodeFull(
       mensagemPersonalizada != null 
       ? mensagemPersonalizada

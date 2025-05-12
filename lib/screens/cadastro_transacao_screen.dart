@@ -180,7 +180,7 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
       Navigator.pop(context, true);
     } else if (_selectedObrigado == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecione um obrigado!')),
+        const SnackBar(content: Text('Selecione um cliente!')),
       );
     }
   }
@@ -232,13 +232,13 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
                       controller: fieldTextEditingController,
                       focusNode: fieldFocusNode,
                       decoration: const InputDecoration(
-                        labelText: 'Obrigado',
+                        labelText: 'Cliente',
                         border: OutlineInputBorder(),
                         suffixIcon: Icon(Icons.search),
                       ),
                       validator: (value) {
                         if (_selectedObrigado == null) {
-                          return 'Selecione um obrigado';
+                          return 'Selecione um cliente';
                         }
                         return null;
                       },

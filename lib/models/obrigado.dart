@@ -25,7 +25,7 @@ class Obrigado {
       id: map['id'],
       nome: map['nome'],
       zap: map['zap'],
-      mensagemPersonalizada: map['mensagemPersonalizada'], // ✅ Carregar o novo campo
+      mensagemPersonalizada: map['mensagem_personalizada'], // ✅ Carregar o novo campo
     );
   }
 
@@ -45,7 +45,7 @@ class Obrigado {
       id: json['id'],
       nome: json['nome'],
       zap: json['zap'],
-      mensagemPersonalizada: json['mensagem_personalizada'], // ✅ Carregar o novo campo
+      mensagemPersonalizada: json['mensagem_personalizada'], // ✅ Corrigido
     );
-  }  
+  }
 }

@@ -121,6 +121,7 @@ class _CadastroObrigadoScreenState extends State<CadastroObrigadoScreen> {
       decoration: const InputDecoration(
         labelText: 'Mensagem personalizada (opcional)',
         border: OutlineInputBorder(),
+        hintText: "Use # para o nome do cliente e % para o valor",
       ),
       maxLines: 3,
     ),
