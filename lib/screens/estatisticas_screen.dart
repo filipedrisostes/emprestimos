@@ -145,10 +145,10 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
     }
     
     return {
-      'Total Emprestado': totalEmprestado,
-      'Juros a Receber': totalJurosReceber,
-      'Juros Pago': totalJurosPago,
-      'Total Quitado': totalQuitado,
+      'Total \nEmprestado': totalEmprestado,
+      'Juros \na Receber': totalJurosReceber,
+      'Juros \nPago': totalJurosPago,
+      'Total \nQuitado': totalQuitado,
       'Lucro': (totalQuitado + totalJurosPago) - totalEmprestado,
     };
   }
@@ -310,7 +310,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Resumo Financeiro',
+                      'Resumo dos Emprestimos',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -320,16 +320,32 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                     SizedBox(
                       height: 300,
                       child: SfCartesianChart(
-                        primaryXAxis: const CategoryAxis(),
+                        primaryXAxis: const CategoryAxis(
+                          labelStyle: TextStyle(
+                          fontSize: 8, // 👈 Diminua aqui o tamanho da fonte
+                          color: Colors.black,
+                        ),
+                        ),
                         series: <CartesianSeries>[
                           ColumnSeries<MapEntry<String, double>, String>(
                             dataSource: _dadosGraficoBarras.entries.toList(),
                             xValueMapper: (entry, _) => entry.key,
                             yValueMapper: (entry, _) => entry.value,
-                            dataLabelSettings: const DataLabelSettings(
+                            dataLabelSettings: DataLabelSettings(
                               isVisible: true,
                               labelAlignment: ChartDataLabelAlignment.top,
+                              textStyle: TextStyle(
+                                fontSize: 10, // Pode ser dinâmico se quiser basear no valor
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black,
+                              ),
                             ),
+                            pointColorMapper: (entry, _) {
+                              final valor = entry.value;
+                              if (valor < 0) return Colors.redAccent;
+                              if (valor == 0) return Colors.grey;
+                              return Colors.cyan;
+                            },
                           )
                         ],
                       ),
