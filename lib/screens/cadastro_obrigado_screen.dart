@@ -106,11 +106,10 @@ class _CadastroObrigadoScreenState extends State<CadastroObrigadoScreen> {
       ),
       keyboardType: TextInputType.phone,
       validator: (value) {
-        if (value?.isEmpty ?? true) return 'Informe o WhatsApp';
+        if (value?.isEmpty ?? true) return null;
         if (!RegExp(r'^(\+?[0-9]{11,14}|[0-9]{2}[0-9]{8,9})$').hasMatch(value!)) {
           return 'Formato: (DDD) + número ou +código';
         }
-        return null;
       },
       autovalidateMode: AutovalidateMode.onUserInteraction,
     ),

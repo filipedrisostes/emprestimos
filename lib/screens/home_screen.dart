@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:emprestimos/dao/obrigado_dao.dart';
 import 'package:emprestimos/dao/transacao_dao.dart';
 import 'package:emprestimos/database_helper.dart';
@@ -12,7 +14,9 @@ import 'package:emprestimos/screens/backup_screen.dart';
 import 'package:emprestimos/screens/lista_obrigados_screen.dart';
 import 'package:emprestimos/services/offline_sync_service.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -44,6 +48,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _carregarDados();
     _enviarMensagensAutomaticamente();
+    checkUpdate();
   }
 
 
@@ -566,44 +571,62 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _enviarMensagensAutomaticamente() async {
-  final hoje = DateTime.now();
-  
-  // Filtra transações vencidas e não pagas
-  final vencidas = _transacoes.where((transacao) {
-    return transacao.dataVencimento != null &&
-           transacao.dataVencimento!.isBefore(hoje) &&
-           transacao.dataPagamentoCompleto == null;
-  }).toList();
+    final hoje = DateTime.now();
+    
+    // Filtra transações vencidas e não pagas
+    final vencidas = _transacoes.where((transacao) {
+      return transacao.dataVencimento != null &&
+            transacao.dataVencimento!.isBefore(hoje) &&
+            transacao.dataPagamentoCompleto == null;
+    }).toList();
 
-  for (var transacao in vencidas) {
-    final obrigado = _encontrarObrigado(transacao.idObrigado);
+    for (var transacao in vencidas) {
+      final obrigado = _encontrarObrigado(transacao.idObrigado);
 
-    // Usa a mensagem personalizada se existir, senão a padrão
-    final mensagem = Uri.encodeFull(
-      obrigado.mensagemPersonalizada != null && obrigado.mensagemPersonalizada!.isNotEmpty
-          ? obrigado.mensagemPersonalizada!
-          : 'Olá ${obrigado.nome}, tudo bem? Lembrando que o valor de ${_currencyFormat.format(transacao.retorno)} venceu.'
-    );
-
-    final numeroLimpo = obrigado.zap.replaceAll(RegExp(r'[^0-9]'), '');
-    final url = 'https://wa.me/$numeroLimpo?text=$mensagem';
-    final uri = Uri.parse(url);
-
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao enviar mensagem: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
+      // Usa a mensagem personalizada se existir, senão a padrão
+      final mensagem = Uri.encodeFull(
+        obrigado.mensagemPersonalizada != null && obrigado.mensagemPersonalizada!.isNotEmpty
+            ? obrigado.mensagemPersonalizada!
+            : 'Olá ${obrigado.nome}, tudo bem? Lembrando que o valor de ${_currencyFormat.format(transacao.retorno)} venceu.'
       );
+
+      final numeroLimpo = obrigado.zap.replaceAll(RegExp(r'[^0-9]'), '');
+      final url = 'https://wa.me/$numeroLimpo?text=$mensagem';
+      final uri = Uri.parse(url);
+
+      try {
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao enviar mensagem: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
-}
 
+  Future<void> checkUpdate() async {
+    final response = await http.get(Uri.parse(
+      'https://raw.githubusercontent.com/seu-usuario/meu-app-flutter/main/releases/v1.0.0/update.json',
+    ));
+    final packageInfo = await PackageInfo.fromPlatform();
+    final currentVersion = packageInfo.version;
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final newVersion = data['version'];
+      final apkUrl = data['url'];
+
+      if (newVersion != currentVersion) {
+        if (await canLaunchUrl(Uri.parse(apkUrl))) {
+          await launchUrl(Uri.parse(apkUrl));
+        }
+      }
+    }
+  }
 
 
 
