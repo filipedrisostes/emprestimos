@@ -146,7 +146,7 @@ class _CadastroObrigadoScreenState extends State<CadastroObrigadoScreen> {
               ),
             )
           : const Text(
-              'Salvar Obrigado',
+              'Salvar Cliente',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,

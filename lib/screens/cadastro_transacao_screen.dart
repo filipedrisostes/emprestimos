@@ -1,6 +1,7 @@
 import 'package:emprestimos/configuracao_service.dart';
 import 'package:emprestimos/currency_input_formatter.dart';
 import 'package:emprestimos/services/notificacao_service.dart';
+import 'package:emprestimos/services/obrigado_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -28,16 +29,16 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
   final _dbHelper = DatabaseHelper.instance;
   late TransacaoDao _transacaoDao;
   late ObrigadoDao _obrigadoDao;
-  DateTime? _dataVencimento; // ✅ Nova variável para vencimento
-  int _diasVencimentoPadrao = 30; // ✅ Dias de vencimento padrão
+  final _obrigadoService = ObrigadoService();
 
-  
+  DateTime? _dataVencimento;
+  int _diasVencimentoPadrao = 30;
+
   List<Obrigado> _obrigados = [];
   Obrigado? _selectedObrigado;
   DateTime _dataEmprestimo = DateTime.now();
   bool _isEditing = false;
 
-  // Máscaras para os campos
   final _valorMask = MaskTextInputFormatter(
     mask: 'R\$ #.###,##',
     filter: {"#": RegExp(r'[0-9]')},
@@ -51,13 +52,12 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
   @override
   void initState() {
     super.initState();
-    _carregarDiasVencimentoPadrao(); // ✅ Carrega os dias padrão
     _transacaoDao = TransacaoDao(_dbHelper);
     _obrigadoDao = ObrigadoDao(_dbHelper);
     _carregarObrigados();
+    _carregarDiasVencimentoPadrao();
     _carregarJurosPadrao();
 
-    // Se estiver editando, preenche os campos
     if (widget.transacao != null) {
       _isEditing = true;
       _preencherCamposEdicao();
@@ -65,7 +65,7 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
       _jurosController.text = '0,00%';
     }
   }
-  
+
   Future<void> _carregarDiasVencimentoPadrao() async {
     _diasVencimentoPadrao = await ConfiguracaoService.getDiasVencimentoPadrao();
     setState(() {
@@ -79,10 +79,10 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
       _obrigados = lista;
     });
 
-    // Se estiver editando, seleciona o obrigado da transação
     if (_isEditing) {
       _selectedObrigado = _obrigados.firstWhere(
         (o) => o.id == widget.transacao!.idObrigado,
+        orElse: () => _obrigados.first,
       );
     }
   }
@@ -90,6 +90,7 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
   void _preencherCamposEdicao() {
     final transacao = widget.transacao!;
     _dataEmprestimo = transacao.dataEmprestimo;
+    _dataVencimento = transacao.dataVencimento;
     _valorController.text = _formatarMoeda(transacao.valorEmprestado);
     _jurosController.text = '${transacao.percentualJuros.toStringAsFixed(2)}%';
     _calcularRetorno();
@@ -102,15 +103,15 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
       decimalDigits: 2,
     ).format(valor);
   }
-  
+
   void _calcularRetorno() {
     try {
       final valor = _extrairValorNumerico(_valorController.text);
       double juros = _extrairValorNumerico(_jurosController.text);
-      juros = juros / 100; 
+      juros = juros / 100;
       final retorno = valor * juros;
       _retornoController.text = _formatarMoeda(retorno);
-    } catch (e) {
+    } catch (_) {
       _retornoController.text = 'R\$ 0,00';
     }
   }
@@ -134,55 +135,71 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
       lastDate: DateTime(2100),
       locale: const Locale('pt', 'BR'),
     );
-    if (picked != null && picked != _dataEmprestimo) {
+    if (picked != null) {
       setState(() {
         _dataEmprestimo = picked;
       });
     }
   }
 
-  Future<void> _salvarTransacao() async {
-    if (_formKey.currentState!.validate() && _selectedObrigado != null) {
-      final transacao = Transacao(
-        id: _isEditing ? widget.transacao!.id : null,
-        idObrigado: _selectedObrigado!.id!,
-        dataEmprestimo: _dataEmprestimo,
-        dataVencimento: _dataVencimento,
-        valorEmprestado: _extrairValorNumerico(_valorController.text),
-        percentualJuros: _extrairValorNumerico(_jurosController.text),
-        retorno: _extrairValorNumerico(_retornoController.text),
-        dataPagamentoRetorno: _isEditing ? widget.transacao!.dataPagamentoRetorno : null,
-        dataPagamentoCompleto: _isEditing ? widget.transacao!.dataPagamentoCompleto : null,
-      );
+  Future<void> _salvarNovoCliente(String nome) async {
+    final novoCliente = Obrigado(nome: nome, zap: '');
+    final id = await _obrigadoService.saveManualContact(novoCliente);
+    final clienteComId = Obrigado(id: id, nome: nome, zap: '');
+    await _carregarObrigados();
+    setState(() {
+      _selectedObrigado = clienteComId;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Cliente "$nome" cadastrado. Clique novamente em "Salvar".')),
+    );
+  }
 
-      int id = -1; // Initialize with a default value
-      if (_isEditing) {
-        await _transacaoDao.updateTransacao(transacao);
-        id = widget.transacao!.id!; // Use the existing ID when editing
-      } else {
-        id = await _transacaoDao.insertTransacao(transacao);
-      }
-      
-      if (_dataVencimento != null) {
-          await NotificationService.agendarNotificacaoVencimento(
-            id: id,
-            nomeObrigado: _selectedObrigado!.nome,
-            dataVencimento: _dataVencimento!,
-          );
-        }
-      
+  Future<void> _salvarTransacao() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    if (_selectedObrigado == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_isEditing 
-          ? 'Transação atualizada com sucesso!' 
-          : 'Transação cadastrada com sucesso!')),
+        const SnackBar(content: Text('Selecione um cliente válido!')),
       );
-      
-      Navigator.pop(context, true);
-    } else if (_selectedObrigado == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecione um cliente!')),
+      return;
+    }
+
+    final transacao = Transacao(
+      id: _isEditing ? widget.transacao!.id : null,
+      idObrigado: _selectedObrigado!.id!,
+      dataEmprestimo: _dataEmprestimo,
+      dataVencimento: _dataVencimento,
+      valorEmprestado: _extrairValorNumerico(_valorController.text),
+      percentualJuros: _extrairValorNumerico(_jurosController.text),
+      retorno: _extrairValorNumerico(_retornoController.text),
+      dataPagamentoRetorno: _isEditing ? widget.transacao!.dataPagamentoRetorno : null,
+      dataPagamentoCompleto: _isEditing ? widget.transacao!.dataPagamentoCompleto : null,
+    );
+
+    int id = -1;
+    if (_isEditing) {
+      await _transacaoDao.updateTransacao(transacao);
+      id = widget.transacao!.id!;
+    } else {
+      id = await _transacaoDao.insertTransacao(transacao);
+    }
+
+    if (_dataVencimento != null) {
+      await NotificationService.agendarNotificacaoVencimento(
+        id: id,
+        nomeObrigado: _selectedObrigado!.nome,
+        dataVencimento: _dataVencimento!,
       );
     }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+          content: Text(_isEditing
+              ? 'Transação atualizada com sucesso!'
+              : 'Transação cadastrada com sucesso!')),
+    );
+    Navigator.pop(context, true);
   }
 
   @override
@@ -206,28 +223,28 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
           child: SingleChildScrollView(
             child: Column(
               children: [
-                // Dropdown com search para obrigados
                 Autocomplete<Obrigado>(
                   optionsBuilder: (TextEditingValue textEditingValue) {
                     if (textEditingValue.text.isEmpty) {
                       return _obrigados;
                     }
                     return _obrigados.where((obrigado) =>
-                      obrigado.nome.toLowerCase().contains(textEditingValue.text.toLowerCase()) ||
-                      obrigado.zap.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+                        obrigado.nome
+                            .toLowerCase()
+                            .contains(textEditingValue.text.toLowerCase()) ||
+                        obrigado.zap
+                            .toLowerCase()
+                            .contains(textEditingValue.text.toLowerCase()));
                   },
-                  displayStringForOption: (Obrigado option) => '${option.nome} (${option.zap})',
+                  displayStringForOption: (Obrigado option) =>
+                      '${option.nome} (${option.zap})',
                   onSelected: (Obrigado selection) {
                     setState(() {
                       _selectedObrigado = selection;
                     });
                   },
-                  fieldViewBuilder: (
-                    BuildContext context,
-                    TextEditingController fieldTextEditingController,
-                    FocusNode fieldFocusNode,
-                    VoidCallback onFieldSubmitted,
-                  ) {
+                  fieldViewBuilder: (context, fieldTextEditingController,
+                      fieldFocusNode, onFieldSubmitted) {
                     return TextFormField(
                       controller: fieldTextEditingController,
                       focusNode: fieldFocusNode,
@@ -238,17 +255,18 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
                       ),
                       validator: (value) {
                         if (_selectedObrigado == null) {
-                          return 'Selecione um cliente';
+                          if (value == null ||
+                              value.trim().isEmpty) {
+                            return 'Selecione ou cadastre um cliente';
+                          }
+                          _salvarNovoCliente(value.trim());
+                          return 'Cliente criado. Clique em "Salvar" novamente.';
                         }
                         return null;
                       },
                     );
                   },
-                  optionsViewBuilder: (
-                    BuildContext context,
-                    AutocompleteOnSelected<Obrigado> onSelected,
-                    Iterable<Obrigado> options,
-                  ) {
+                  optionsViewBuilder: (context, onSelected, options) {
                     return Align(
                       alignment: Alignment.topLeft,
                       child: Material(
@@ -259,13 +277,14 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
                           child: ListView.builder(
                             padding: EdgeInsets.zero,
                             itemCount: options.length,
-                            itemBuilder: (BuildContext context, int index) {
+                            itemBuilder: (context, index) {
                               final Obrigado option = options.elementAt(index);
                               return InkWell(
                                 onTap: () => onSelected(option),
                                 child: Padding(
                                   padding: const EdgeInsets.all(16.0),
-                                  child: Text('${option.nome} (${option.zap})'),
+                                  child:
+                                      Text('${option.nome} (${option.zap})'),
                                 ),
                               );
                             },
@@ -276,7 +295,6 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
                   },
                 ),
                 const SizedBox(height: 20),
-                // Data do empréstimo
                 InkWell(
                   onTap: () => _selectDate(context),
                   child: InputDecorator(
@@ -294,7 +312,6 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                // ✅ Novo campo para Data de Vencimento
                 InkWell(
                   onTap: () async {
                     final picked = await showDatePicker(
@@ -322,7 +339,6 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                // Valor emprestado com máscara
                 TextFormField(
                   controller: _valorController,
                   decoration: const InputDecoration(
@@ -331,7 +347,7 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
                   ),
                   keyboardType: TextInputType.number,
                   inputFormatters: [CurrencyInputFormatter()],
-                  onChanged: (value) => _calcularRetorno(),
+                  onChanged: (_) => _calcularRetorno(),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
                       return 'Informe o valor';
@@ -344,7 +360,6 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
                   },
                 ),
                 const SizedBox(height: 20),
-                // Percentual de juros com máscara
                 TextFormField(
                   controller: _jurosController,
                   decoration: const InputDecoration(
@@ -353,7 +368,7 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
                   ),
                   keyboardType: TextInputType.number,
                   inputFormatters: [_jurosMask],
-                  onChanged: (value) => _calcularRetorno(),
+                  onChanged: (_) => _calcularRetorno(),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
                       return 'Informe o percentual';
@@ -366,7 +381,6 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
                   },
                 ),
                 const SizedBox(height: 20),
-                // Valor de retorno (calculado automaticamente)
                 TextFormField(
                   controller: _retornoController,
                   decoration: const InputDecoration(
@@ -377,12 +391,12 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
                   ),
                 ),
                 const SizedBox(height: 30),
-                // Botão de salvar
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: _salvarTransacao,
-                    child: Text(_isEditing ? 'Atualizar Transação' : 'Salvar Transação'),
+                    child: Text(
+                        _isEditing ? 'Atualizar Transação' : 'Salvar Transação'),
                   ),
                 ),
               ],
@@ -395,9 +409,7 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
 
   Future<void> _carregarJurosPadrao() async {
     final jurosPadrao = await ConfiguracaoService.getJurosPadrao();
-    // Converte para string formatada e adiciona o símbolo de porcentagem
     _jurosController.text = '${jurosPadrao.toStringAsFixed(2).replaceAll('.', ',')}%';
     _calcularRetorno();
   }
- 
 }
