@@ -199,6 +199,11 @@ class _HomeScreenState extends State<HomeScreen> {
             transacao.dataEmprestimo.month + 1,
             transacao.dataEmprestimo.day,
           ),
+          dataVencimento: DateTime(
+            transacao.dataVencimento!.year,
+            transacao.dataVencimento!.month + 1,
+            transacao.dataVencimento!.day,
+          ),
           valorEmprestado: transacao.valorEmprestado,
           percentualJuros: transacao.percentualJuros,
           retorno: transacao.retorno,
