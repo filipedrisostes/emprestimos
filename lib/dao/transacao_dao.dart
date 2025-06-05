@@ -93,20 +93,27 @@ class TransacaoDao {
     );
   }
 
-  // Busca transações por período
   Future<List<Transacao>> getTransacoesByPeriodo(DateTime inicio, DateTime fim) async {
     final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
       'transacoes',
-      where: 'data_emprestimo BETWEEN ? AND ?',
+      where: 'data_vencimento BETWEEN ? AND ?', // Alterado para data_vencimento
       whereArgs: [
         inicio.toIso8601String(),
         fim.toIso8601String(),
       ],
     );
-
-    print('Resultado da consulta: $maps');
-
     return List.generate(maps.length, (i) => Transacao.fromMap(maps[i]));
+  }
+
+  Future<List<Transacao>> getTransacoesByPai(int idTransacaoPai) async {
+    final db = await dbHelper.database;
+    final maps = await db.query(
+      'transacoes',
+      where: 'id_transacao_pai = ?',
+      whereArgs: [idTransacaoPai],
+      orderBy: 'parcela ASC',
+    );
+    return maps.map((map) => Transacao.fromMap(map)).toList();
   }
 }

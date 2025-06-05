@@ -2,11 +2,12 @@ import 'dart:convert';
 
 import 'package:emprestimos/dao/obrigado_dao.dart';
 import 'package:emprestimos/dao/transacao_dao.dart';
+import 'package:emprestimos/dao/transacao_pai_dao.dart';
 import 'package:emprestimos/database_helper.dart';
 
 import 'package:emprestimos/models/obrigado.dart';
 import 'package:emprestimos/models/transacao.dart';
-import 'package:emprestimos/screens/cadastro_obrigado_screen.dart';
+import 'package:emprestimos/models/transacao_pai.dart';
 import 'package:emprestimos/screens/cadastro_transacao_screen.dart';
 import 'package:emprestimos/screens/configuracao_screen.dart';
 import 'package:emprestimos/screens/estatisticas_screen.dart';
@@ -31,6 +32,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final TransacaoDao _transacaoDao = TransacaoDao(DatabaseHelper.instance);
   final ObrigadoDao _obrigadoDao = ObrigadoDao(DatabaseHelper.instance);
   List<Transacao> _transacoes = [];
+  final TransacaoPaiDao _transacaoPaiDao = TransacaoPaiDao(DatabaseHelper.instance);
   double _totalReceber = 0;
   DateTime _currentMonth = DateTime.now();
   List<Obrigado> _obrigados = [];
@@ -189,38 +191,46 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _marcarComoPagoJuros(Transacao transacao) async {
     try {
       if (transacao.id != null) {
+        // Busca transação pai
+        final transacaoPai = await _transacaoPaiDao.buscarPorId(transacao.idTransacaoPai);
+        
+        if (transacaoPai == null) {
+          throw Exception('Transação pai não encontrada');
+        }
+
+        // Verifica se é a última parcela
+        final todasParcelas = await _transacaoDao.getTransacoesByPai(transacao.idTransacaoPai);
+        final ultimaParcela = todasParcelas.fold(0, (max, t) => t.parcela > max ? t.parcela : max);
+
         await _transacaoDao.updateDataPagamentoRetorno(transacao.id!, DateTime.now());
         
-        final novaTransacao = Transacao(
-          id: null, // Corrigido aqui
-          idObrigado: transacao.idObrigado,
-          dataEmprestimo: DateTime(
-            transacao.dataEmprestimo.year,
-            transacao.dataEmprestimo.month + 1,
-            transacao.dataEmprestimo.day,
-          ),
-          dataVencimento: DateTime(
-            transacao.dataVencimento!.year,
-            transacao.dataVencimento!.month + 1,
-            transacao.dataVencimento!.day,
-          ),
-          valorEmprestado: transacao.valorEmprestado,
-          percentualJuros: transacao.percentualJuros,
-          retorno: transacao.retorno,
-        );
-        
-        await _transacaoDao.insertTransacao(novaTransacao);
+        if (transacao.parcela >= ultimaParcela) {
+          // Cria nova transação apenas se não for a última parcela
+          final novaTransacao = Transacao(
+            id: null,
+            dataVencimento: DateTime(
+              transacao.dataVencimento!.year,
+              transacao.dataVencimento!.month + 1,
+              transacao.dataVencimento!.day,
+            ),
+            retorno: transacao.retorno,
+            dataPagamentoRetorno: null,
+            dataPagamentoCompleto: null,
+            idTransacaoPai: transacao.idTransacaoPai,
+            parcela: transacao.parcela + 1,
+          );
+          
+          await _transacaoDao.insertTransacao(novaTransacao);
+        }
+
         await _carregarDados();
-        
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Juros pagos e nova transação criada!')),
+          const SnackBar(content: Text('Juros pagos com sucesso!')),
         );
-      } else {
-        throw Exception('Transação ID não pode ser nulo');
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao processar pagamento: ${e.toString()}')),
+        SnackBar(content: Text('Erro: ${e.toString()}')),
       );
     }
   }
@@ -320,9 +330,25 @@ class _HomeScreenState extends State<HomeScreen> {
                             itemCount: transacoes.length,
                             itemBuilder: (context, index) {
                               final transacao = transacoes[index];
-                              final obrigado = _encontrarObrigado(transacao.idObrigado);
+                              return FutureBuilder(
+                                future: _transacaoPaiDao.buscarPorId(transacao.idTransacaoPai),
+                                builder: (context, snapshot) {
+                                  if (snapshot.connectionState == ConnectionState.waiting) {
+                                    return const ListTile(
+                                      title: Text('Carregando...'),
+                                    );
+                                  }
+                                  if (snapshot.hasError || !snapshot.hasData || snapshot.data == null) {
+                                    return ListTile(
+                                      title: Text('Erro ao carregar transação pai'),
+                                    );
+                                  }
+                                  final transacaoPai = snapshot.data!;
+                                  final obrigado = _encontrarObrigado(transacaoPai.idObrigado);
 
-                              return _buildTransacaoCard(transacao, obrigado);
+                                  return _buildTransacaoCard(transacao, obrigado);
+                                },
+                              );
                             },
                           );
                         },
@@ -369,6 +395,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildTransacaoCard(Transacao transacao, Obrigado obrigado) {
   final hoje = DateTime.now();
   var corCard;
+  
   if(transacao.dataPagamentoCompleto != null){
     corCard = Colors.green[100];
   }
@@ -381,87 +408,107 @@ class _HomeScreenState extends State<HomeScreen> {
   else{
     corCard = null;
   }
-  return Card( 
-    margin: const EdgeInsets.all(8),
-    elevation: 2,
-    color: corCard,
-    child: ListTile(
-      title: Text(obrigado.nome),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Valor: ${_currencyFormat.format(transacao.valorEmprestado)}'),
-          Text('Juros: ${transacao.percentualJuros}%'),
-          Text('Total: ${_currencyFormat.format(transacao.retorno)}'),
-          if (transacao.dataVencimento != null)
-            Text('Prazo: ${DateFormat('dd/MM/yyyy').format(transacao.dataVencimento!)}'),
-          if (transacao.dataPagamentoCompleto != null)
-            Text('Pago em: ${DateFormat('dd/MM/yyyy').format(transacao.dataPagamentoCompleto!)}'),
-          if (transacao.dataPagamentoRetorno != null)
-            Text('Juros pagos em: ${DateFormat('dd/MM/yyyy').format(transacao.dataPagamentoRetorno!)}'),
-        ],
-      ),
-      trailing: Wrap(
-        spacing: -20,
-        children: [
-          if (transacao.dataPagamentoCompleto == null)
-            IconButton(
-              icon: const Icon(Icons.attach_money, color: Colors.green),
-              tooltip: 'Marcar como totalmente pago',
-              onPressed: () => _marcarComoPagoTotal(transacao),
-            ),
-          if (transacao.dataPagamentoCompleto == null)
-            IconButton(
-              icon: const Icon(Icons.percent, color: Colors.blue),
-              tooltip: 'Pagar apenas juros',
-              onPressed: () => _marcarComoPagoJuros(transacao),
-            ),
-          IconButton(
-            icon: const Icon(Icons.edit, color: Colors.orange),
-            tooltip: 'Editar Transação',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => CadastroTransacaoScreen(transacao: transacao),
-                ),
-              ).then((_) => _carregarDados());
-            },
+  
+  return FutureBuilder<TransacaoPai?>(
+    future: _transacaoPaiDao.buscarPorId(transacao.idTransacaoPai),
+    builder: (context, snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return const CircularProgressIndicator();
+      }
+      
+      if (!snapshot.hasData || snapshot.data == null) {
+        return const Text('Transação pai não encontrada');
+      }
+      
+      final transacaoPai = snapshot.data!;
+      
+      return Card( 
+        margin: const EdgeInsets.all(8),
+        elevation: 2,
+        color: corCard,
+        child: ListTile(
+          title: Text(obrigado.nome),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Parcela: ${transacao.parcela} de ${transacaoPai.qtdeParcelas}'),
+              Text('Valor: ${_currencyFormat.format(transacaoPai.valorEmprestado)}'),
+              Text('Juros: ${transacaoPai.percentualJuros}%'),
+              Text('Total: ${_currencyFormat.format(transacao.retorno)}'),
+              if (transacao.dataVencimento != null)
+                Text('Prazo: ${DateFormat('dd/MM/yyyy').format(transacao.dataVencimento!)}'),
+              if (transacao.dataPagamentoCompleto != null)
+                Text('Pago em: ${DateFormat('dd/MM/yyyy').format(transacao.dataPagamentoCompleto!)}'),
+              if (transacao.dataPagamentoRetorno != null)
+                Text('Juros pagos em: ${DateFormat('dd/MM/yyyy').format(transacao.dataPagamentoRetorno!)}'),
+            ],
           ),
-          IconButton(
-            icon: const Icon(Icons.delete, color: Colors.red),
-            tooltip: 'Excluir Transação',
-            onPressed: () async {
-              final confirmar = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Excluir Transação'),
-                  content: const Text('Tem certeza que deseja excluir esta transação?'),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-                    TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Excluir')),
-                  ],
+          trailing: Wrap(
+            spacing: -20,
+            children: [
+              if (transacao.dataPagamentoCompleto == null)
+                IconButton(
+                  icon: const Icon(Icons.attach_money, color: Colors.green),
+                  tooltip: 'Marcar como totalmente pago',
+                  onPressed: () => _marcarComoPagoTotal(transacao),
                 ),
-              );
-              if (confirmar == true) {
-                if (transacao.id != null) {
-                  await _transacaoDao.deleteTransacao(transacao.id!);
-                } else {
-                  throw Exception('Transação ID não pode ser nulo');
-                }
-                await _carregarDados();
-              }
-            },
+              if (transacao.dataPagamentoCompleto == null)
+                IconButton(
+                  icon: const Icon(Icons.percent, color: Colors.blue),
+                  tooltip: 'Pagar apenas juros',
+                  onPressed: () => _marcarComoPagoJuros(transacao),
+                ),
+              IconButton(
+                icon: const Icon(Icons.edit, color: Colors.orange),
+                tooltip: 'Editar Transação',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => CadastroTransacaoScreen(
+                        transacao: transacao,
+                        transacaoPai: transacaoPai,
+                      ),
+                    ),
+                  ).then((_) => _carregarDados());
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete, color: Colors.red),
+                tooltip: 'Excluir Transação',
+                onPressed: () async {
+                  final confirmar = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Excluir Transação'),
+                      content: const Text('Tem certeza que deseja excluir esta transação?'),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+                        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Excluir')),
+                      ],
+                    ),
+                  );
+                  if (confirmar == true) {
+                    if (transacao.id != null) {
+                      await _transacaoDao.deleteTransacao(transacao.id!);
+                    } else {
+                      throw Exception('Transação ID não pode ser nulo');
+                    }
+                    await _carregarDados();
+                  }
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.phone_android, color: Colors.green),
+                onPressed: () => _enviarWhatsApp(obrigado, transacaoPai.valorEmprestado),
+              )
+            ],
           ),
-          IconButton(
-            icon: const Icon(Icons.phone_android, color: Colors.green),
-            onPressed: () => _enviarWhatsApp(obrigado, transacao.valorEmprestado),
-          )
-        ],
-      ),
-    ),
+        ),
+      );
+    },
   );
-} // fim _buildTransacaoCard
+}// fim _buildTransacaoCard
 
   Widget _buildTotalReceber() {
     return Container(
@@ -577,16 +624,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _enviarMensagensAutomaticamente() async {
     final hoje = DateTime.now();
+    final primeiroDiaMes = DateTime(hoje.year, hoje.month, 1);
+    final ultimoDiaMes = DateTime(hoje.year, hoje.month + 1, 0);
+    
+    // Busca transações do mês atual
+    final transacoes = await _transacaoDao.getTransacoesByPeriodo(primeiroDiaMes, ultimoDiaMes);
     
     // Filtra transações vencidas e não pagas
-    final vencidas = _transacoes.where((transacao) {
+    final vencidas = transacoes.where((transacao) {
       return transacao.dataVencimento != null &&
             transacao.dataVencimento!.isBefore(hoje) &&
             transacao.dataPagamentoCompleto == null;
     }).toList();
 
     for (var transacao in vencidas) {
-      final obrigado = _encontrarObrigado(transacao.idObrigado);
+      final transacaoPai = await _transacaoPaiDao.buscarPorId(transacao.idTransacaoPai);
+      if (transacaoPai == null) continue;
+      final obrigado = _encontrarObrigado(transacaoPai.idObrigado);
 
       // Usa a mensagem personalizada se existir, senão a padrão
       final mensagem = Uri.encodeFull(
