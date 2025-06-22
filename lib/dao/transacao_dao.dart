@@ -131,4 +131,24 @@ class TransacaoDao {
     return maps.map((map) => Transacao.fromMap(map)).toList();
   }
 
+  Future<int> updateParcelasFuturasComoPagas(int idTransacaoPai, DateTime dataPagamento) async {
+    final db = await dbHelper.database;
+    final where = 'id_transacao_pai = ? AND data_vencimento > ? AND data_pagamento_completo IS NULL';
+    final whereArgs = [idTransacaoPai, dataPagamento.toIso8601String()];
+    
+    print('Executando update com:');
+    print('WHERE: $where');
+    print('WHERE ARGS: $whereArgs');
+    
+    final result = await db.update(
+      'transacoes',
+      {'data_pagamento_completo': dataPagamento.toIso8601String()},
+      where: where,
+      whereArgs: whereArgs,
+    );
+    
+    print('$result registros atualizados');
+    return result;
+  }
+
 }

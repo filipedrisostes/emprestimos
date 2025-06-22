@@ -98,7 +98,8 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
       final dentroPeriodoFinal = _dataFinal == null || 
           transacaoPai.dataEmprestimo.isBefore(_dataFinal!.add(const Duration(days: 1)));
       return dentroPeriodoInicial && dentroPeriodoFinal;
-    }).toList();
+    }).toList()
+      ..sort((a, b) => a.idTransacaoPai.compareTo(b.idTransacaoPai)); // Ordena por id_transacao_pai
   }
 
   List<Map<String, dynamic>> get _maioresDevedores {
@@ -156,53 +157,68 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
 
   Map<String, double> get _dadosGraficoBarras {
     double totalEmprestado = 0;
-    double totalJurosReceber = 0;
-    double totalJurosPago = 0;
+    double jurosAReceber = 0;
+    double jurosPago = 0;
     double totalQuitado = 0;
     
+    // Mapa para evitar duplicar cálculos de transações pai
+    final Map<int, TransacaoPai> transacoesPaiMap = _transacoesPaiMap;
+    String idTransacaoPaiAux = '';
     for (final transacao in _transacoesFiltradas) {
-      final transacaoPai = _transacoesPaiMap[transacao.idTransacaoPai];
+      final transacaoPai = transacoesPaiMap[transacao.idTransacaoPai];
       if (transacaoPai == null) continue;
-      
+
+      // 1. Total Emprestado (soma do valor original)
       totalEmprestado += transacaoPai.valorEmprestado;
-      
+
+      // 2. Juros a Receber (parcelas não pagas)
+      if (transacao.dataPagamentoRetorno == null && 
+          transacao.dataPagamentoCompleto == null) {
+        jurosAReceber += transacao.retorno;
+      }
+
+      // 3. Juros Pago (apenas juros pagos)
+      if (transacao.dataPagamentoRetorno != null && 
+          transacao.dataPagamentoCompleto == null) {
+        jurosPago += transacao.retorno;
+      }
+
+      // 4. Total Quitado (parcelas quitadas completamente)
       if (transacao.dataPagamentoCompleto != null) {
-        totalQuitado += transacao.retorno;
-        totalJurosPago += transacao.retorno - transacaoPai.valorEmprestado;
-      } else if (transacao.dataPagamentoRetorno != null) {
-        totalJurosPago += transacao.retorno - transacaoPai.valorEmprestado;
-      } else {
-        totalJurosReceber += transacao.retorno - transacaoPai.valorEmprestado;
+        if (idTransacaoPaiAux != transacao.idTransacaoPai.toString()) {
+          idTransacaoPaiAux = transacao.idTransacaoPai.toString();
+          totalQuitado += transacao.retorno + transacaoPai.valorEmprestado;
+        }
       }
     }
-    
+
+    // 5. Lucro = (Juros Pago + Total Quitado) - Total Emprestado
+    double lucro = (jurosPago + totalQuitado) - totalEmprestado;
+
     return {
-      'Total \nEmprestado': totalEmprestado,
-      'Juros \na Receber': totalJurosReceber,
-      'Juros \nPago': totalJurosPago,
-      'Total \nQuitado': totalQuitado,
-      'Lucro': (totalQuitado + totalJurosPago) - totalEmprestado,
+      'Total Emprestado': totalEmprestado,
+      'Juros a Receber': jurosAReceber,
+      'Juros Pago': jurosPago,
+      'Total Quitado': totalQuitado,
+      'Lucro': lucro , // Exibe apenas lucro positivo
     };
   }
 
-  List<Map<String, dynamic>> get _previsaoArrecadacao {
-    final Map<String, double> arrecadacaoPorMes = {};
+  List<Map<String, dynamic>> get _previsaoJurosReceber {
+    final Map<String, double> jurosPorMes = {};
     
     for (final transacao in _transacoesFiltradas) {
-      final transacaoPai = _transacoesPaiMap[transacao.idTransacaoPai];
-      if (transacaoPai == null) continue;
-      
+      // Considera apenas transações não pagas
       if (transacao.dataPagamentoCompleto == null && 
-          transacao.dataPagamentoRetorno == null) {
-        final mesAno = DateFormat('MM/yyyy').format(transacaoPai.dataEmprestimo);
-        final juros = transacao.retorno - transacaoPai.valorEmprestado;
+          transacao.dataPagamentoRetorno == null &&
+          transacao.dataVencimento != null) {
         
-        arrecadacaoPorMes[mesAno] = 
-            (arrecadacaoPorMes[mesAno] ?? 0) + juros;
+        final mesAno = DateFormat('MM/yyyy').format(transacao.dataVencimento!);
+        jurosPorMes[mesAno] = (jurosPorMes[mesAno] ?? 0) + transacao.retorno;
       }
     }
     
-    return arrecadacaoPorMes.entries.map((entry) {
+    return jurosPorMes.entries.map((entry) {
       return {
         'mes': entry.key,
         'juros': entry.value,
@@ -346,7 +362,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'Resumo dos Emprestimos',
+                            'Resumo Financeiro',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
@@ -356,34 +372,75 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                           SizedBox(
                             height: 300,
                             child: SfCartesianChart(
-                              primaryXAxis: const CategoryAxis(
-                                labelStyle: TextStyle(
-                                fontSize: 8,
-                                color: Colors.black,
+                              primaryXAxis: CategoryAxis(
+                                labelStyle: const TextStyle(fontSize: 10),
+                                labelRotation: -45, // Rotaciona labels para melhor legibilidade
                               ),
+                              primaryYAxis: NumericAxis(
+                                numberFormat: NumberFormat.compactCurrency(symbol: 'R\$'),
+                              ),
+                              tooltipBehavior: TooltipBehavior(
+                                enable: true,
+                                format: 'point.x : R\$point.y',
                               ),
                               series: <CartesianSeries>[
                                 ColumnSeries<MapEntry<String, double>, String>(
                                   dataSource: _dadosGraficoBarras.entries.toList(),
                                   xValueMapper: (entry, _) => entry.key,
                                   yValueMapper: (entry, _) => entry.value,
+                                  color: Colors.blue,
                                   dataLabelSettings: DataLabelSettings(
                                     isVisible: true,
                                     labelAlignment: ChartDataLabelAlignment.top,
-                                    textStyle: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.black,
-                                    ),
+                                    textStyle: const TextStyle(fontSize: 10),
                                   ),
+                                  // Cores personalizadas para cada barra
                                   pointColorMapper: (entry, _) {
-                                    final valor = entry.value;
-                                    if (valor < 0) return Colors.redAccent;
-                                    if (valor == 0) return Colors.grey;
-                                    return Colors.cyan;
+                                    switch (entry.key) {
+                                      case 'Total Emprestado':
+                                        return Colors.blue[800];
+                                      case 'Juros a Receber':
+                                        return Colors.orange;
+                                      case 'Juros Pago':
+                                        return Colors.green[600];
+                                      case 'Total Quitado':
+                                        return Colors.purple;
+                                      case 'Lucro':
+                                        return Colors.teal;
+                                      default:
+                                        return Colors.blue;
+                                    }
                                   },
                                 )
                               ],
+                            ),
+                          ),
+                          // Legenda explicativa
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Wrap(
+                              spacing: 10,
+                              children: _dadosGraficoBarras.entries.map((entry) {
+                                return Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 12,
+                                      height: 12,
+                                      color: entry.key == 'Total Emprestado' ? Colors.blue[800] :
+                                            entry.key == 'Juros a Receber' ? Colors.orange :
+                                            entry.key == 'Juros Pago' ? Colors.green[600] :
+                                            entry.key == 'Total Quitado' ? Colors.purple :
+                                            Colors.teal,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      entry.key,
+                                      style: const TextStyle(fontSize: 10),
+                                    ),
+                                  ],
+                                );
+                              }).toList(),
                             ),
                           ),
                         ],
@@ -392,7 +449,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                   ),
                   const SizedBox(height: 20),
                   
-                  // 4. Gráfico de linha (previsão de arrecadação)
+                  // 4. Gráfico de linha (previsão de Juros a Receber)
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
@@ -400,7 +457,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'Previsão de Arrecadação',
+                            'Previsão de Juros a Receber',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
@@ -410,19 +467,52 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                           SizedBox(
                             height: 300,
                             child: SfCartesianChart(
-                              primaryXAxis: const CategoryAxis(),
+                              primaryXAxis: CategoryAxis(
+                                labelRotation: -45,
+                                labelStyle: const TextStyle(fontSize: 10),
+                              ),
+                              primaryYAxis: NumericAxis(
+                                numberFormat: NumberFormat.currency(
+                                  locale: 'pt_BR', 
+                                  symbol: 'R\$',
+                                  decimalDigits: 2,
+                                ),
+                                minimum: 0, // Garante que não mostra valores negativos
+                              ),
                               series: <CartesianSeries>[
                                 LineSeries<Map<String, dynamic>, String>(
-                                  dataSource: _previsaoArrecadacao,
+                                  dataSource: _previsaoJurosReceber,
                                   xValueMapper: (data, _) => data['mes'],
                                   yValueMapper: (data, _) => data['juros'],
-                                  dataLabelSettings: const DataLabelSettings(
+                                  markerSettings: const MarkerSettings(isVisible: true),
+                                  dataLabelSettings: DataLabelSettings(
                                     isVisible: true,
+                                    labelAlignment: ChartDataLabelAlignment.top,
+                                    textStyle: const TextStyle(fontSize: 10),
                                   ),
+                                  color: Colors.green,
                                 )
                               ],
+                              tooltipBehavior: TooltipBehavior(
+                                enable: true,
+                                format: 'point.x : R\$point.y',
+                              ),
                             ),
                           ),
+                          // Total acumulado
+                          if (_previsaoJurosReceber.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8.0),
+                              child: Text(
+                                'Total previsto: ${_currencyFormat.format(
+                                  _previsaoJurosReceber.fold(0.0, (sum, item) => sum + item['juros'])
+                                )}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green,
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),

@@ -13,6 +13,7 @@ import 'package:emprestimos/screens/configuracao_screen.dart';
 import 'package:emprestimos/screens/estatisticas_screen.dart';
 import 'package:emprestimos/screens/backup_screen.dart';
 import 'package:emprestimos/screens/lista_obrigados_screen.dart';
+import 'package:emprestimos/services/notificacao_service.dart';
 import 'package:emprestimos/services/offline_sync_service.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -152,8 +153,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final confirmado = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Confirmar Pagamento'),
-        content: const Text('Deseja marcar esta transação como totalmente paga?'),
+        title: const Text('Quitar Todas as Parcelas'),
+        content: const Text('Isso marcará TODAS as parcelas futuras como pagas. Continuar?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -167,16 +168,48 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
 
-    if (confirmado == true) {
+    if (confirmado != true) return;
+
+    setState(() => _isLoading = true);
+    
+    try {
+      final agora = DateTime.now();
+      final transacaoDao = TransacaoDao(DatabaseHelper.instance);
+
+      // 1. Marca a parcela atual como paga
       if (transacao.id != null) {
-        await _transacaoDao.updateDataPagamentoCompleto(transacao.id!, DateTime.now());
-      } else {
-        throw Exception('Transação ID não pode ser nulo');
+        await transacaoDao.updateDataPagamentoCompleto(transacao.id!, agora);
       }
-      await _carregarDados();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pagamento registrado com sucesso!')),
+
+      // 2. Marca TODAS as parcelas futuras como pagas
+      final parcelasAtualizadas = await transacaoDao.updateParcelasFuturasComoPagas(
+        transacao.idTransacaoPai,
+        agora,
       );
+
+      // 3. Feedback para o usuário
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$parcelasAtualizadas parcelas marcadas como pagas!'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+
+      // 4. Atualiza a lista
+      await _carregarDados();
+
+      // 5. Cancela notificações
+      await NotificationService.cancelarNotificacoes(transacao.idTransacaoPai);
+
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 

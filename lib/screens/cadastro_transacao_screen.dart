@@ -240,10 +240,21 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
       }
     }
 
-    await NotificationService.agendarNotificacaoVencimento(
-      id: idTransacaoPai,
+    final List<DateTime> datasVencimento = [];
+    for (int i = 0; i < qtdeParcelas; i++) {
+      datasVencimento.add(DateTime(
+        _dataVencimento!.year,
+        _dataVencimento!.month + i,
+        _dataVencimento!.day,
+      ));
+    }
+
+    // Dentro do método _salvarTransacao, substitua a chamada de agendamento por:
+    await NotificationService.agendarNotificacoesVencimento(
+      idTransacaoPai: idTransacaoPai,
       nomeObrigado: _selectedObrigado!.nome,
-      dataVencimento: _dataVencimento!,
+      datasVencimento: datasVencimento.where((data) => data.isAfter(DateTime.now())).toList(), // Filtra apenas datas futuras
+      valor: valorEmprestado * (percentualJuros / 100),
     );
 
     ScaffoldMessenger.of(context).showSnackBar(
