@@ -1,3 +1,4 @@
+import 'package:emprestimos/screens/detalhes_obrigado_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:emprestimos/models/obrigado.dart';
 import 'package:emprestimos/dao/obrigado_dao.dart';
@@ -70,6 +71,14 @@ class _ListaObrigadosScreenState extends State<ListaObrigadosScreen> {
                   child: ListTile(
                     title: Text(obrigado.nome),
                     subtitle: Text('WhatsApp: ${obrigado.zap}'),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => DetalhesObrigadoScreen(obrigado: obrigado),
+                        ),
+                      );
+                    },
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

@@ -63,12 +63,26 @@ class TransacaoDao {
   // Lista transações de um obrigado específico
   Future<List<Transacao>> getTransacoesByObrigado(int idObrigado) async {
     final db = await dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'transacoes',
+    
+    // Primeiro obtemos todas as transações pai do obrigado
+    final transacoesPai = await db.query(
+      'transacao_pai',
       where: 'id_obrigado = ?',
       whereArgs: [idObrigado],
     );
-    return List.generate(maps.length, (i) => Transacao.fromMap(maps[i]));
+    
+    if (transacoesPai.isEmpty) return [];
+    
+    // Depois obtemos todas as transações filhas
+    final idsTransacoesPai = transacoesPai.map((tp) => tp['id'] as int).toList();
+    
+    final maps = await db.query(
+      'transacoes',
+      where: 'id_transacao_pai IN (${List.filled(idsTransacoesPai.length, '?').join(',')})',
+      whereArgs: idsTransacoesPai,
+    );
+    
+    return maps.map((map) => Transacao.fromMap(map)).toList();
   }
 
   // Atualiza a data de pagamento do retorno
@@ -116,4 +130,5 @@ class TransacaoDao {
     );
     return maps.map((map) => Transacao.fromMap(map)).toList();
   }
+
 }

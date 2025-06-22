@@ -49,5 +49,16 @@ class TransacaoPaiDao {
     final maps = await db.query('transacao_pai');
     return maps.map((map) => TransacaoPai.fromMap(map)).toList();
   }
+
+  // Adicione este método no TransacaoPaiDao
+  Future<List<TransacaoPai>> getTransacoesByObrigado(int idObrigado) async {
+    final db = await dbHelper.database;
+    final maps = await db.query(
+      'transacao_pai',
+      where: 'id_obrigado = ?',
+      whereArgs: [idObrigado],
+    );
+    return maps.map((map) => TransacaoPai.fromMap(map)).toList();
+  }
   
 }

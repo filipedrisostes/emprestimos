@@ -38,6 +38,11 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Obrigado> _obrigados = [];
   bool _isLoading = true;
   bool _isSyncing = false;
+  bool _mostrarTodos = true;
+  bool _mostrarEmAberto = false;
+  bool _mostrarPagoTotal = false;
+  bool _mostrarPagoJuros = false;
+  bool _mostrarVencido = false;
   
   final NumberFormat _currencyFormat = NumberFormat.currency(
     locale: 'pt_BR',
@@ -49,7 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _carregarDados();
-    _enviarMensagensAutomaticamente();
+    //_enviarMensagensAutomaticamente();
     checkUpdate();
   }
 
@@ -111,50 +116,37 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _carregarDados() async {
-    setState(() => _isLoading = true);
+  setState(() => _isLoading = true);
+  
+  try {
+    final primeiroDia = DateTime(_currentMonth.year, _currentMonth.month, 1);
+    final ultimoDia = DateTime(_currentMonth.year, _currentMonth.month + 1, 0);
     
-    try {
-      final primeiroDia = DateTime(_currentMonth.year, _currentMonth.month, 1);
-      final ultimoDia = DateTime(_currentMonth.year, _currentMonth.month + 1, 0);
-      
-      final [transacoes, obrigados] = await Future.wait([
-        _transacaoDao.getTransacoesByPeriodo(primeiroDia, ultimoDia),
-        _obrigadoDao.getAllObrigados(),
-      ] as Iterable<Future>);
-      
-      for (var t in transacoes) {
-        print('Transação carregada: ${t.toMap()}');
+    final [transacoes, obrigados] = await Future.wait([
+      _transacaoDao.getTransacoesByPeriodo(primeiroDia, ultimoDia),
+      _obrigadoDao.getAllObrigados(),
+    ] as Iterable<Future>);
+    
+    double total = 0;
+    for (var transacao in transacoes) {
+      if ((transacao.dataPagamentoCompleto == null && transacao.dataPagamentoRetorno == null)) {
+        total += transacao.retorno;
       }
-
-      double total = 0;
-      for (var transacao in transacoes) {
-        if ((transacao.dataPagamentoCompleto == null && transacao.dataPagamentoRetorno == null)) {
-          total += transacao.retorno;
-        }
-      }
-      
-      setState(()  {
-        _totalReceber = total;
-        _obrigados = obrigados;
-        _isLoading = false;
-        // Enfileirar automaticamente ao carregar dados
-        /*final payload = {
-          'obrigados': _obrigados.map((o) => o.toJson()).toList(),
-          'transacoes': _transacoes.map((t) => t.toJson()).toList(),
-        };
-        await OfflineSyncService().enqueue(
-          'https://SEU_BACKEND_AQUI/sync', // ajuste para sua URL real
-          payload,
-        );*/
-        // —————————————————————
-      });
-    } catch (e) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao carregar dados: ${e.toString()}')),
-      );
     }
+    
+    setState(()  {
+      _transacoes = transacoes; // Armazena as transações no estado
+      _totalReceber = total;
+      _obrigados = obrigados;
+      _isLoading = false;
+    });
+  } catch (e) {
+    setState(() => _isLoading = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Erro ao carregar dados: ${e.toString()}')),
+    );
   }
+}
 
   Future<void> _marcarComoPagoTotal(Transacao transacao) async {
     final confirmado = await showDialog<bool>(
@@ -286,20 +278,86 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.all(8.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: Column(
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back_ios),
-                      onPressed: _mesAnterior,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back_ios),
+                          onPressed: _mesAnterior,
+                        ),
+                        Text(
+                          _capitalize(DateFormat('MMMM/yyyy').format(_currentMonth)),
+                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.arrow_forward_ios),
+                          onPressed: _proximoMes,
+                        ),
+                      ],
                     ),
-                    Text(
-                      _capitalize(DateFormat('MMMM/yyyy').format(_currentMonth)),
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.arrow_forward_ios),
-                      onPressed: _proximoMes,
+                    const SizedBox(height: 8),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _buildFilterCheckbox('Todos', _mostrarTodos, (value) {
+                            setState(() {
+                              _mostrarTodos = value ?? false;
+                              // Quando "Todos" é marcado, desmarca os outros
+                              if (_mostrarTodos) {
+                                _mostrarEmAberto = false;
+                                _mostrarPagoTotal = false;
+                                _mostrarPagoJuros = false;
+                                _mostrarVencido = false;
+                              }
+                            });
+                          }),
+                          _buildFilterCheckbox('Em Aberto', _mostrarEmAberto, (value) {
+                            setState(() {
+                              _mostrarEmAberto = value ?? false;
+                              // Se nenhum filtro específico está marcado, ativa "Todos"
+                              if (!_mostrarEmAberto && 
+                                  !_mostrarPagoTotal && 
+                                  !_mostrarPagoJuros && 
+                                  !_mostrarVencido) {
+                                _mostrarTodos = true;
+                              } else {
+                                _mostrarTodos = false;
+                              }
+                            });
+                          }),
+                          _buildFilterCheckbox('Pago Total', _mostrarPagoTotal, (value) {
+                            setState(() {
+                              _mostrarPagoTotal = value!;
+                              _mostrarTodos = !value && 
+                                !_mostrarEmAberto && 
+                                !_mostrarPagoJuros && 
+                                !_mostrarVencido;
+                            });
+                          }),
+                          _buildFilterCheckbox('Pago Juros', _mostrarPagoJuros, (value) {
+                            setState(() {
+                              _mostrarPagoJuros = value!;
+                              _mostrarTodos = !value && 
+                                !_mostrarEmAberto && 
+                                !_mostrarPagoTotal && 
+                                !_mostrarVencido;
+                            });
+                          }),
+                          _buildFilterCheckbox('Vencido', _mostrarVencido, (value) {
+                            setState(() {
+                              _mostrarVencido = value!;
+                              _mostrarTodos = !value && 
+                                !_mostrarEmAberto && 
+                                !_mostrarPagoTotal && 
+                                !_mostrarPagoJuros;
+                            });
+                          }),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -321,15 +379,20 @@ class _HomeScreenState extends State<HomeScreen> {
                         }
 
                           final transacoes = snapshot.data ?? [];
+                          final transacoesFiltradas = _filtrarTransacoes(transacoes);
 
                           if (transacoes.isEmpty) {
                             return const Center(child: Text('Nenhuma transação este mês'));
                           }
 
+                          if (transacoesFiltradas.isEmpty) {
+                            return const Center(child: Text('Nenhuma transação com esses filtros'));
+                          }
+
                           return ListView.builder(
-                            itemCount: transacoes.length,
+                            itemCount: transacoesFiltradas.length,
                             itemBuilder: (context, index) {
-                              final transacao = transacoes[index];
+                              final transacao = transacoesFiltradas[index];
                               return FutureBuilder(
                                 future: _transacaoPaiDao.buscarPorId(transacao.idTransacaoPai),
                                 builder: (context, snapshot) {
@@ -431,6 +494,7 @@ class _HomeScreenState extends State<HomeScreen> {
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Text('Data: ${transacaoPai.dataEmprestimo != null ? DateFormat('dd/MM/yyyy').format(transacaoPai.dataEmprestimo!) : 'Não definida'}'),
               Text('Parcela: ${transacao.parcela} de ${transacaoPai.qtdeParcelas}'),
               Text('Valor: ${_currencyFormat.format(transacaoPai.valorEmprestado)}'),
               Text('Juros: ${transacaoPai.percentualJuros}%'),
@@ -440,7 +504,7 @@ class _HomeScreenState extends State<HomeScreen> {
               if (transacao.dataPagamentoCompleto != null)
                 Text('Pago em: ${DateFormat('dd/MM/yyyy').format(transacao.dataPagamentoCompleto!)}'),
               if (transacao.dataPagamentoRetorno != null)
-                Text('Juros pagos em: ${DateFormat('dd/MM/yyyy').format(transacao.dataPagamentoRetorno!)}'),
+                Text('Juros: ${DateFormat('dd/MM/yyyy').format(transacao.dataPagamentoRetorno!)}'),
             ],
           ),
           trailing: Wrap(
@@ -511,26 +575,43 @@ class _HomeScreenState extends State<HomeScreen> {
 }// fim _buildTransacaoCard
 
   Widget _buildTotalReceber() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.blue[50],
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          const Text(
-            'Total a receber este mês:',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          Text(
-            _currencyFormat.format(_totalReceber),
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-        ],
-      ),
-    );
+    double total = 0;
+    final hoje = DateTime.now();
+    
+     // Obtém as transações filtradas
+    final transacoesFiltradas = _filtrarTransacoes(_transacoes);
+  
+    for (var transacao in transacoesFiltradas) {
+      final pagoTotal = transacao.dataPagamentoCompleto != null;
+      final pagoJuros = transacao.dataPagamentoRetorno != null;
+      
+      // Soma apenas as transações não pagas
+      if (!pagoTotal && !pagoJuros) {
+        total += transacao.retorno;
+      }
+    }
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.blue[50],
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Total a receber:',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            Text(
+              _currencyFormat.format(total),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      );
+    
+
   }
 
   Widget _buildDrawer() {
@@ -686,6 +767,59 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
   }
+
+  List<Transacao> _filtrarTransacoes(List<Transacao> transacoes) {
+      final hoje = DateTime.now();
+      
+      if (_mostrarTodos) {
+        return transacoes;
+      }
+
+      return transacoes.where((transacao) {
+        final vencimento = transacao.dataVencimento;
+        final pagoTotal = transacao.dataPagamentoCompleto != null;
+        final pagoJuros = transacao.dataPagamentoRetorno != null;
+        final emAberto = !pagoTotal && !pagoJuros;
+        
+        bool mostra = false;
+        
+        if (_mostrarEmAberto) {
+          mostra = mostra || (emAberto && vencimento != null && vencimento.isAfter(hoje));
+        }
+        
+        if (_mostrarPagoTotal) {
+          mostra = mostra || pagoTotal;
+        }
+        
+        if (_mostrarPagoJuros) {
+          mostra = mostra || pagoJuros;
+        }
+        
+        if (_mostrarVencido) {
+          mostra = mostra || (emAberto && vencimento != null && vencimento.isBefore(hoje));
+        }
+        
+        return mostra;
+      }).toList();
+    }
+
+  Widget _buildFilterCheckbox(String label, bool value, ValueChanged<bool?> onChanged) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4.0),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Checkbox(
+              value: value,
+              onChanged: onChanged,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+            ),
+            Text(label, style: const TextStyle(fontSize: 12)),
+          ],
+        ),
+      );
+    }
 
 
 
