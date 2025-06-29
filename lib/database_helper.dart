@@ -30,6 +30,14 @@ class DatabaseHelper {
     );
   }
 
+  // Método para fechar a conexão com o banco de dados
+  Future<void> close() async {
+    if (_database != null && _database!.isOpen) {
+      await _database!.close();
+      _database = null;
+    }
+  }
+
   FutureOr<void> _onCreate(Database db, int version) async {
     await db.transaction((txn) async {
       // Tabela obrigados
