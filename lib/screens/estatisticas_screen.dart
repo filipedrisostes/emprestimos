@@ -227,6 +227,26 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
       ..sort((a, b) => (a['mes'] as String).compareTo(b['mes'] as String));
   }
 
+  List<Map<String, dynamic>> get _historicoJurosPagos {
+    final Map<String, double> jurosPorMes = {};
+    
+    for (final transacao in _transacoesFiltradas) {
+      // Considera apenas transações com juros pagos (data_pagamento_retorno != null)
+      if (transacao.dataPagamentoRetorno != null) {
+        final mesAno = DateFormat('MM/yyyy').format(transacao.dataPagamentoRetorno!);
+        jurosPorMes[mesAno] = (jurosPorMes[mesAno] ?? 0) + transacao.retorno;
+      }
+    }
+    
+    return jurosPorMes.entries.map((entry) {
+      return {
+        'mes': entry.key,
+        'juros': entry.value,
+      };
+    }).toList()
+      ..sort((a, b) => (a['mes'] as String).compareTo(b['mes'] as String));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -392,7 +412,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                                   dataLabelSettings: DataLabelSettings(
                                     isVisible: true,
                                     labelAlignment: ChartDataLabelAlignment.top,
-                                    textStyle: const TextStyle(fontSize: 10),
+                                    textStyle: const TextStyle(color: Colors.black, fontSize: 10),
                                   ),
                                   // Cores personalizadas para cada barra
                                   pointColorMapper: (entry, _) {
@@ -510,6 +530,75 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   color: Colors.green,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // 5. Gráfico de linha (histórico de Juros Pagos)
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Histórico de Juros Pagos',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            height: 300,
+                            child: SfCartesianChart(
+                              primaryXAxis: CategoryAxis(
+                                labelRotation: -45,
+                                labelStyle: const TextStyle(fontSize: 10),
+                              ),
+                              primaryYAxis: NumericAxis(
+                                numberFormat: NumberFormat.currency(
+                                  locale: 'pt_BR', 
+                                  symbol: 'R\$',
+                                  decimalDigits: 2,
+                                ),
+                                minimum: 0, // Garante que não mostra valores negativos
+                              ),
+                              series: <CartesianSeries>[
+                                LineSeries<Map<String, dynamic>, String>(
+                                  dataSource: _historicoJurosPagos,
+                                  xValueMapper: (data, _) => data['mes'],
+                                  yValueMapper: (data, _) => data['juros'],
+                                  markerSettings: const MarkerSettings(isVisible: true),
+                                  dataLabelSettings: DataLabelSettings(
+                                    isVisible: true,
+                                    labelAlignment: ChartDataLabelAlignment.top,
+                                    textStyle: const TextStyle(fontSize: 10),
+                                  ),
+                                  color: Colors.blue,
+                                )
+                              ],
+                              tooltipBehavior: TooltipBehavior(
+                                enable: true,
+                                format: 'point.x : R\$point.y',
+                              ),
+                            ),
+                          ),
+                          // Total acumulado
+                          if (_historicoJurosPagos.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8.0),
+                              child: Text(
+                                'Total recebido: ${_currencyFormat.format(
+                                  _historicoJurosPagos.fold(0.0, (sum, item) => sum + item['juros'])
+                                )}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue,
                                 ),
                               ),
                             ),

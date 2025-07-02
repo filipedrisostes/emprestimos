@@ -174,39 +174,16 @@ class _HomeScreenState extends State<HomeScreen> {
     
     try {
       final agora = DateTime.now();
-      final transacaoDao = TransacaoDao(DatabaseHelper.instance);
-
-      // 1. Marca a parcela atual como paga
-      if (transacao.id != null) {
-        await transacaoDao.updateDataPagamentoCompleto(transacao.id!, agora);
-      }
-
-      // 2. Marca TODAS as parcelas futuras como pagas
-      final parcelasAtualizadas = await transacaoDao.updateParcelasFuturasComoPagas(
-        transacao.idTransacaoPai,
-        agora,
-      );
-
-      // 3. Feedback para o usuário
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$parcelasAtualizadas parcelas marcadas como pagas!'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-
-      // 4. Atualiza a lista
+      await _transacaoDao.updateDataPagamentoCompleto(transacao.id!, agora);
+      await _transacaoDao.updateParcelasFuturasComoPagas(transacao.idTransacaoPai, agora);
       await _carregarDados();
-
-      // 5. Cancela notificações
-      await NotificationService.cancelarNotificacoes(transacao.idTransacaoPai);
-
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Transação quitada com sucesso!')),
+      );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Erro: ${e.toString()}')),
       );
     } finally {
       setState(() => _isLoading = false);
@@ -214,49 +191,66 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _marcarComoPagoJuros(Transacao transacao) async {
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirmar Pagamento de Juros'),
+        content: const Text('Confirmar o pagamento dos juros? Se sim, será lançada uma nova cobrança para o próximo mês'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmado != true) return;
+
+    setState(() => _isLoading = true);
+    
     try {
-      if (transacao.id != null) {
-        // Busca transação pai
-        final transacaoPai = await _transacaoPaiDao.buscarPorId(transacao.idTransacaoPai);
-        
-        if (transacaoPai == null) {
-          throw Exception('Transação pai não encontrada');
-        }
-
-        // Verifica se é a última parcela
-        final todasParcelas = await _transacaoDao.getTransacoesByPai(transacao.idTransacaoPai);
-        final ultimaParcela = todasParcelas.fold(0, (max, t) => t.parcela > max ? t.parcela : max);
-
-        await _transacaoDao.updateDataPagamentoRetorno(transacao.id!, DateTime.now());
-        
-        if (transacao.parcela >= ultimaParcela) {
-          // Cria nova transação apenas se não for a última parcela
-          final novaTransacao = Transacao(
-            id: null,
-            dataVencimento: DateTime(
-              transacao.dataVencimento!.year,
-              transacao.dataVencimento!.month + 1,
-              transacao.dataVencimento!.day,
-            ),
-            retorno: transacao.retorno,
-            dataPagamentoRetorno: null,
-            dataPagamentoCompleto: null,
-            idTransacaoPai: transacao.idTransacaoPai,
-            parcela: transacao.parcela + 1,
-          );
-          
-          await _transacaoDao.insertTransacao(novaTransacao);
-        }
-
-        await _carregarDados();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Juros pagos com sucesso!')),
-        );
+      // Busca transação pai
+      final transacaoPai = await _transacaoPaiDao.buscarPorId(transacao.idTransacaoPai);
+      
+      if (transacaoPai == null) {
+        throw Exception('Transação pai não encontrada');
       }
+
+      // Marca juros como pagos
+      await _transacaoDao.updateDataPagamentoRetorno(transacao.id!, DateTime.now());
+      
+      // Cria nova cobrança para o próximo mês
+      final novaTransacao = Transacao(
+        id: null,
+        dataVencimento: DateTime(
+          transacao.dataVencimento!.year,
+          transacao.dataVencimento!.month + 1,
+          transacao.dataVencimento!.day,
+        ),
+        retorno: transacao.retorno,
+        dataPagamentoRetorno: null,
+        dataPagamentoCompleto: null,
+        idTransacaoPai: transacao.idTransacaoPai,
+        parcela: transacao.parcela + 1,
+      );
+      
+      await _transacaoDao.insertTransacao(novaTransacao);
+
+      await _carregarDados();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Juros pagos com sucesso! Nova cobrança gerada.')),
+      );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Erro: ${e.toString()}')),
       );
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -313,22 +307,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.all(8.0),
                 child: Column(
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back_ios),
-                          onPressed: _mesAnterior,
-                        ),
-                        Text(
-                          _capitalize(DateFormat('MMMM/yyyy').format(_currentMonth)),
-                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.arrow_forward_ios),
-                          onPressed: _proximoMes,
-                        ),
-                      ],
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row( // colocar os checkboxes para caber dentro da tela
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.arrow_back_ios),
+                            onPressed: _mesAnterior,
+                          ),
+                          Text(
+                            _capitalize(DateFormat('MMMM/yyyy').format(_currentMonth)),
+                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.arrow_forward_ios),
+                            onPressed: _proximoMes,
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 8),
                     SingleChildScrollView(
@@ -543,62 +540,65 @@ class _HomeScreenState extends State<HomeScreen> {
           trailing: Wrap(
             spacing: -20,
             children: [
-              if (transacao.dataPagamentoCompleto == null)
+              // Ícone "Pago Total" (só aparece se NÃO estiver pago)
+              if (transacao.dataPagamentoCompleto == null && transacao.dataPagamentoRetorno == null)
                 IconButton(
                   icon: const Icon(Icons.attach_money, color: Colors.green),
-                  tooltip: 'Marcar como totalmente pago',
                   onPressed: () => _marcarComoPagoTotal(transacao),
                 ),
-              if (transacao.dataPagamentoCompleto == null)
+
+              // Ícone "Pago Juros" (só aparece se NÃO estiver pago)
+              if (transacao.dataPagamentoCompleto == null && transacao.dataPagamentoRetorno == null)
                 IconButton(
                   icon: const Icon(Icons.percent, color: Colors.blue),
-                  tooltip: 'Pagar apenas juros',
                   onPressed: () => _marcarComoPagoJuros(transacao),
                 ),
-              IconButton(
-                icon: const Icon(Icons.edit, color: Colors.orange),
-                tooltip: 'Editar Transação',
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => CadastroTransacaoScreen(
-                        transacao: transacao,
-                        transacaoPai: transacaoPai,
+
+              // Ícone "Editar" (só aparece se NÃO estiver pago)
+              if (transacao.dataPagamentoCompleto == null && transacao.dataPagamentoRetorno == null)
+                IconButton(
+                  icon: const Icon(Icons.edit, color: Colors.orange),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => CadastroTransacaoScreen(
+                          transacao: transacao,
+                          transacaoPai: transacaoPai,
+                        ),
                       ),
-                    ),
-                  ).then((_) => _carregarDados());
-                },
-              ),
-              IconButton(
-                icon: const Icon(Icons.delete, color: Colors.red),
-                tooltip: 'Excluir Transação',
-                onPressed: () async {
-                  final confirmar = await showDialog<bool>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Excluir Transação'),
-                      content: const Text('Tem certeza que deseja excluir esta transação?'),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-                        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Excluir')),
-                      ],
-                    ),
-                  );
-                  if (confirmar == true) {
-                    if (transacao.id != null) {
+                    ).then((_) => _carregarDados());
+                  },
+                ),
+
+              // Ícone "Excluir" (só aparece se NÃO estiver pago)
+              if (transacao.dataPagamentoCompleto == null && transacao.dataPagamentoRetorno == null)
+                IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                  onPressed: () async {
+                    final confirmar = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Excluir Transação'),
+                        content: const Text('Tem certeza que deseja excluir esta transação?'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+                          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Excluir')),
+                        ],
+                      ),
+                    );
+                    if (confirmar == true) {
                       await _transacaoDao.deleteTransacao(transacao.id!);
-                    } else {
-                      throw Exception('Transação ID não pode ser nulo');
+                      await _carregarDados();
                     }
-                    await _carregarDados();
-                  }
-                },
-              ),
+                  },
+                ),
+
+              // Ícone WhatsApp (sempre visível)
               IconButton(
                 icon: const Icon(Icons.phone_android, color: Colors.green),
-                onPressed: () => _enviarWhatsApp(obrigado, transacaoPai.valorEmprestado),
-              )
+                onPressed: () => _enviarWhatsApp(obrigado, transacao.retorno),
+              ),
             ],
           ),
         ),

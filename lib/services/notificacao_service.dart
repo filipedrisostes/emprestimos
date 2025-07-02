@@ -95,15 +95,15 @@ class NotificationService {
   }
 
   static Future<void> cancelarNotificacoes(int idTransacaoPai) async {
-  final todasNotificacoes = await _notificationsPlugin.pendingNotificationRequests();
-  
-  // Cancela todas as notificações relacionadas a esta transação
-  for (final notificacao in todasNotificacoes) {
-    if (notificacao.id >= idTransacaoPai && notificacao.id < idTransacaoPai + 100) {
-      await _notificationsPlugin.cancel(notificacao.id);
+    final todasNotificacoes = await _notificationsPlugin.pendingNotificationRequests();
+    
+    // Cancela todas as notificações relacionadas a esta transação
+    for (final notificacao in todasNotificacoes) {
+      if (notificacao.id >= idTransacaoPai && notificacao.id < idTransacaoPai + 100) {
+        await _notificationsPlugin.cancel(notificacao.id);
+      }
     }
   }
-}
 
   static Future<void> mostrarNotificacaoVencida({
     required int id,
