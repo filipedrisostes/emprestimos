@@ -364,22 +364,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         _buildFilterChip(
                           context,
-                          label: 'Todos',
-                          selected: _mostrarTodos,
-                          onSelected: (value) {
-                            setState(() {
-                              _mostrarTodos = value;
-                              if (_mostrarTodos) {
-                                _mostrarEmAberto = false;
-                                _mostrarPagoTotal = false;
-                                _mostrarPagoJuros = false;
-                                _mostrarVencido = false;
-                              }
-                            });
-                          },
-                        ),
-                        _buildFilterChip(
-                          context,
                           label: 'Em Aberto',
                           selected: _mostrarEmAberto,
                           onSelected: (value) {
@@ -542,7 +526,7 @@ class _HomeScreenState extends State<HomeScreen> {
       checkmarkColor: Theme.of(context).primaryColor,
       labelStyle: TextStyle(
         color: selected ? Theme.of(context).primaryColor : Colors.grey[700],
-        fontSize: 12,
+        fontSize: 6,
       ),
       shape: StadiumBorder(
         side: BorderSide(
@@ -882,39 +866,40 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   List<Transacao> _filtrarTransacoes(List<Transacao> transacoes) {
-      final hoje = DateTime.now();
-      
-      if (_mostrarTodos) {
-        return transacoes;
-      }
-
-      return transacoes.where((transacao) {
-        final vencimento = transacao.dataVencimento;
-        final pagoTotal = transacao.dataPagamentoCompleto != null;
-        final pagoJuros = transacao.dataPagamentoRetorno != null;
-        final emAberto = !pagoTotal && !pagoJuros;
-        
-        bool mostra = false;
-        
-        if (_mostrarEmAberto) {
-          mostra = mostra || (emAberto && vencimento != null && vencimento.isAfter(hoje));
-        }
-        
-        if (_mostrarPagoTotal) {
-          mostra = mostra || pagoTotal;
-        }
-        
-        if (_mostrarPagoJuros) {
-          mostra = mostra || pagoJuros;
-        }
-        
-        if (_mostrarVencido) {
-          mostra = mostra || (emAberto && vencimento != null && vencimento.isBefore(hoje));
-        }
-        
-        return mostra;
-      }).toList();
+    final hoje = DateTime.now();
+    
+    // Se nenhum filtro está ativo, mostra todos
+    if (!_mostrarEmAberto && !_mostrarPagoTotal && !_mostrarPagoJuros && !_mostrarVencido) {
+      return transacoes;
     }
+
+    return transacoes.where((transacao) {
+      final vencimento = transacao.dataVencimento;
+      final pagoTotal = transacao.dataPagamentoCompleto != null;
+      final pagoJuros = transacao.dataPagamentoRetorno != null;
+      final emAberto = !pagoTotal && !pagoJuros;
+      
+      bool mostra = false;
+      
+      if (_mostrarEmAberto) {
+        mostra = mostra || (emAberto && vencimento != null && vencimento.isAfter(hoje));
+      }
+      
+      if (_mostrarPagoTotal) {
+        mostra = mostra || pagoTotal;
+      }
+      
+      if (_mostrarPagoJuros) {
+        mostra = mostra || pagoJuros;
+      }
+      
+      if (_mostrarVencido) {
+        mostra = mostra || (emAberto && vencimento != null && vencimento.isBefore(hoje));
+      }
+      
+      return mostra;
+    }).toList();
+  }
 
     Widget _buildFilterCheckbox(String label, bool value, ValueChanged<bool?> onChanged) {
       return Padding(

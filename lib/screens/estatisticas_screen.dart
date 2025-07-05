@@ -400,6 +400,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                                 labelRotation: -45, // Rotaciona labels para melhor legibilidade
                               ),
                               primaryYAxis: NumericAxis(
+                                isVisible: false,
                                 numberFormat: NumberFormat.compactCurrency(symbol: 'R\$'),
                               ),
                               tooltipBehavior: TooltipBehavior(
@@ -495,6 +496,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                                 labelStyle: const TextStyle(fontSize: 10),
                               ),
                               primaryYAxis: NumericAxis(
+                                isVisible: false,
                                 numberFormat: NumberFormat.currency(
                                   locale: 'pt_BR', 
                                   symbol: 'R\$',
@@ -564,6 +566,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                                 labelStyle: const TextStyle(fontSize: 10),
                               ),
                               primaryYAxis: NumericAxis(
+                                isVisible: false,
                                 numberFormat: NumberFormat.currency(
                                   locale: 'pt_BR', 
                                   symbol: 'R\$',
