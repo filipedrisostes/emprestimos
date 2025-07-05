@@ -205,27 +205,30 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
   }
 
   List<Map<String, dynamic>> get _previsaoJurosReceber {
-    final Map<String, double> jurosPorMes = {};
-    
-    for (final transacao in _transacoesFiltradas) {
-      // Considera apenas transações não pagas
-      if (transacao.dataPagamentoCompleto == null && 
-          transacao.dataPagamentoRetorno == null &&
-          transacao.dataVencimento != null) {
-        
-        final mesAno = DateFormat('MM/yyyy').format(transacao.dataVencimento!);
-        jurosPorMes[mesAno] = (jurosPorMes[mesAno] ?? 0) + transacao.retorno;
-      }
+  final Map<String, double> jurosPorMes = {};
+  
+  for (final transacao in _transacoesFiltradas) {
+    if (transacao.dataPagamentoCompleto == null && 
+        transacao.dataPagamentoRetorno == null &&
+        transacao.dataVencimento != null) {
+      
+      final mesAno = DateFormat('yyyy-MM').format(transacao.dataVencimento!); // Formato ISO para ordenação
+      final mesAnoFormatado = DateFormat('MM/yyyy').format(transacao.dataVencimento!); // Formato de exibição
+      jurosPorMes[mesAno] = (jurosPorMes[mesAno] ?? 0) + transacao.retorno;
     }
-    
-    return jurosPorMes.entries.map((entry) {
-      return {
-        'mes': entry.key,
-        'juros': entry.value,
-      };
-    }).toList()
-      ..sort((a, b) => (a['mes'] as String).compareTo(b['mes'] as String));
   }
+  
+  return jurosPorMes.entries.map((entry) {
+    final date = DateTime.parse('${entry.key}-01');
+    final mesFormatado = DateFormat('MM/yyyy').format(date);
+    return {
+      'mes': mesFormatado,
+      'juros': entry.value,
+      'date': date, // Para ordenação
+    };
+  }).toList()
+    ..sort((a, b) => (a['date'] as DateTime).compareTo(b['date'] as DateTime));
+}
 
   List<Map<String, dynamic>> get _historicoJurosPagos {
     final Map<String, double> jurosPorMes = {};

@@ -15,17 +15,48 @@ class ListaObrigadosScreen extends StatefulWidget {
 
 class _ListaObrigadosScreenState extends State<ListaObrigadosScreen> {
   final ObrigadoDao _obrigadoDao = ObrigadoDao(DatabaseHelper.instance);
-  late Future<List<Obrigado>> _obrigadosFuture;
+  List<Obrigado> _todosObrigados = [];
+  List<Obrigado> _obrigadosFiltrados = [];
+  final TextEditingController _searchController = TextEditingController();
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _carregarObrigados();
+    _searchController.addListener(_filtrarObrigados);
   }
 
-  void _carregarObrigados() {
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _carregarObrigados() async {
+    setState(() => _isLoading = true);
+    try {
+      final obrigados = await _obrigadoDao.getAllObrigados();
+      setState(() {
+        _todosObrigados = obrigados;
+        _obrigadosFiltrados = obrigados;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao carregar clientes: ${e.toString()}')),
+      );
+    }
+  }
+
+  void _filtrarObrigados() {
+    final query = _searchController.text.toLowerCase();
     setState(() {
-      _obrigadosFuture = _obrigadoDao.getAllObrigados();
+      _obrigadosFiltrados = _todosObrigados.where((obrigado) {
+        return obrigado.nome.toLowerCase().contains(query) ||
+               obrigado.zap.toLowerCase().contains(query);
+      }).toList();
     });
   }
 
@@ -51,60 +82,69 @@ class _ListaObrigadosScreenState extends State<ListaObrigadosScreen> {
         },
         child: const Icon(Icons.add),
       ),
-      body: FutureBuilder<List<Obrigado>>(
-        future: _obrigadosFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          } else if (snapshot.hasError) {
-            return Center(child: Text('Erro: ${snapshot.error}'));
-          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text('Nenhum cliente cadastrado.'));
-          } else {
-            final obrigados = snapshot.data!;
-            return ListView.builder(
-              itemCount: obrigados.length,
-              itemBuilder: (context, index) {
-                final obrigado = obrigados[index];
-                return Card(
-                  margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  child: ListTile(
-                    title: Text(obrigado.nome),
-                    subtitle: Text('WhatsApp: ${obrigado.zap}'),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => DetalhesObrigadoScreen(obrigado: obrigado),
-                        ),
-                      );
-                    },
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit, color: Colors.orange),
-                          tooltip: 'Editar',
-                          onPressed: () async {
-                            final atualizado = await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => EditarObrigadoScreen(obrigado: obrigado),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Pesquisar cliente...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _obrigadosFiltrados.isEmpty
+                    ? const Center(child: Text('Nenhum cliente encontrado.'))
+                    : ListView.builder(
+                        itemCount: _obrigadosFiltrados.length,
+                        itemBuilder: (context, index) {
+                          final obrigado = _obrigadosFiltrados[index];
+                          return Card(
+                            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            child: ListTile(
+                              title: Text(obrigado.nome),
+                              subtitle: Text('WhatsApp: ${obrigado.zap}'),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => DetalhesObrigadoScreen(obrigado: obrigado),
+                                  ),
+                                );
+                              },
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit, color: Colors.orange),
+                                    tooltip: 'Editar',
+                                    onPressed: () async {
+                                      final atualizado = await Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => EditarObrigadoScreen(obrigado: obrigado),
+                                        ),
+                                      );
+                                      if (atualizado == true) {
+                                        _carregarObrigados();
+                                      }
+                                    },
+                                  ),
+                                ],
                               ),
-                            );
-                            if (atualizado == true) {
-                              _carregarObrigados();
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            );
-          }
-        },
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
       ),
     );
   }

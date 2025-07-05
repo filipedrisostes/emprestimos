@@ -10,6 +10,7 @@ import 'package:emprestimos/models/transacao.dart';
 import 'package:emprestimos/models/transacao_pai.dart';
 import 'package:emprestimos/screens/cadastro_transacao_screen.dart';
 import 'package:emprestimos/screens/configuracao_screen.dart';
+import 'package:emprestimos/screens/database_explorer_screen.dart';
 import 'package:emprestimos/screens/estatisticas_screen.dart';
 import 'package:emprestimos/screens/backup_screen.dart';
 import 'package:emprestimos/screens/lista_obrigados_screen.dart';
@@ -44,6 +45,12 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _mostrarPagoTotal = false;
   bool _mostrarPagoJuros = false;
   bool _mostrarVencido = false;
+  int _storageTapCount = 0;
+  DateTime? _lastTapTime;
+
+  // Secret tap variables
+  int _secretTapCount = 0;
+  DateTime? _lastSecretTap;
   
   final NumberFormat _currencyFormat = NumberFormat.currency(
     locale: 'pt_BR',
@@ -59,6 +66,23 @@ class _HomeScreenState extends State<HomeScreen> {
     checkUpdate();
   }
 
+  void _handleSecretTap() {
+    final now = DateTime.now();
+    
+    // Reseta se passou mais de 3 segundos desde o último toque
+    if (_lastSecretTap != null && now.difference(_lastSecretTap!) > Duration(seconds: 3)) {
+      _secretTapCount = 0;
+    }
+
+    _secretTapCount++;
+    _lastSecretTap = now;
+
+    if (_secretTapCount >= 10) {
+      _secretTapCount = 0;
+      _showCodeInputDialog(context); // Mostra o diálogo após 10 toques
+    }
+  }
+  
 
   Future<void> _enviarWhatsApp(Obrigado obrigado, double valor) async {
     // Remove caracteres não numéricos do telefone
@@ -224,6 +248,11 @@ class _HomeScreenState extends State<HomeScreen> {
       // Marca juros como pagos
       await _transacaoDao.updateDataPagamentoRetorno(transacao.id!, DateTime.now());
       
+      // Determina o número da próxima parcela
+      final proximaParcela = transacaoPai.qtdeParcelas == 1 
+          ? 1  // Mantém como parcela 1 se for única
+          : transacao.parcela + 1;  // Incrementa normalmente para múltiplas parcelas
+      
       // Cria nova cobrança para o próximo mês
       final novaTransacao = Transacao(
         id: null,
@@ -236,7 +265,7 @@ class _HomeScreenState extends State<HomeScreen> {
         dataPagamentoRetorno: null,
         dataPagamentoCompleto: null,
         idTransacaoPai: transacao.idTransacaoPai,
-        parcela: transacao.parcela + 1,
+        parcela: proximaParcela,  // Usa o valor calculado acima
       );
       
       await _transacaoDao.insertTransacao(novaTransacao);
@@ -328,15 +357,18 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _buildFilterCheckbox('Todos', _mostrarTodos, (value) {
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 10.0,    // Espaço horizontal entre os itens
+                      runSpacing: 8.0,  // Espaço vertical entre linhas quando houver quebra
+                      children: [
+                        _buildFilterChip(
+                          context,
+                          label: 'Todos',
+                          selected: _mostrarTodos,
+                          onSelected: (value) {
                             setState(() {
-                              _mostrarTodos = value ?? false;
-                              // Quando "Todos" é marcado, desmarca os outros
+                              _mostrarTodos = value;
                               if (_mostrarTodos) {
                                 _mostrarEmAberto = false;
                                 _mostrarPagoTotal = false;
@@ -344,50 +376,53 @@ class _HomeScreenState extends State<HomeScreen> {
                                 _mostrarVencido = false;
                               }
                             });
-                          }),
-                          _buildFilterCheckbox('Em Aberto', _mostrarEmAberto, (value) {
+                          },
+                        ),
+                        _buildFilterChip(
+                          context,
+                          label: 'Em Aberto',
+                          selected: _mostrarEmAberto,
+                          onSelected: (value) {
                             setState(() {
-                              _mostrarEmAberto = value ?? false;
-                              // Se nenhum filtro específico está marcado, ativa "Todos"
-                              if (!_mostrarEmAberto && 
-                                  !_mostrarPagoTotal && 
-                                  !_mostrarPagoJuros && 
-                                  !_mostrarVencido) {
-                                _mostrarTodos = true;
-                              } else {
-                                _mostrarTodos = false;
-                              }
+                              _mostrarEmAberto = value;
+                              _updateTodosStatus();
                             });
-                          }),
-                          _buildFilterCheckbox('Pago Total', _mostrarPagoTotal, (value) {
+                          },
+                        ),
+                        _buildFilterChip(
+                          context,
+                          label: 'Pago Total',
+                          selected: _mostrarPagoTotal,
+                          onSelected: (value) {
                             setState(() {
-                              _mostrarPagoTotal = value!;
-                              _mostrarTodos = !value && 
-                                !_mostrarEmAberto && 
-                                !_mostrarPagoJuros && 
-                                !_mostrarVencido;
+                              _mostrarPagoTotal = value;
+                              _updateTodosStatus();
                             });
-                          }),
-                          _buildFilterCheckbox('Pago Juros', _mostrarPagoJuros, (value) {
+                          },
+                        ),
+                        _buildFilterChip(
+                          context,
+                          label: 'Pago Juros',
+                          selected: _mostrarPagoJuros,
+                          onSelected: (value) {
                             setState(() {
-                              _mostrarPagoJuros = value!;
-                              _mostrarTodos = !value && 
-                                !_mostrarEmAberto && 
-                                !_mostrarPagoTotal && 
-                                !_mostrarVencido;
+                              _mostrarPagoJuros = value;
+                              _updateTodosStatus();
                             });
-                          }),
-                          _buildFilterCheckbox('Vencido', _mostrarVencido, (value) {
+                          },
+                        ),
+                        _buildFilterChip(
+                          context,
+                          label: 'Vencido',
+                          selected: _mostrarVencido,
+                          onSelected: (value) {
                             setState(() {
-                              _mostrarVencido = value!;
-                              _mostrarTodos = !value && 
-                                !_mostrarEmAberto && 
-                                !_mostrarPagoTotal && 
-                                !_mostrarPagoJuros;
+                              _mostrarVencido = value;
+                              _updateTodosStatus();
                             });
-                          }),
-                        ],
-                      ),
+                          },
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -482,6 +517,41 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
 
+    );
+  }
+  void _updateTodosStatus() {
+    setState(() {
+      _mostrarTodos = !_mostrarEmAberto && 
+                    !_mostrarPagoTotal && 
+                    !_mostrarPagoJuros && 
+                    !_mostrarVencido;
+    });
+  }
+
+  Widget _buildFilterChip(BuildContext context, {
+    required String label,
+    required bool selected,
+    required ValueChanged<bool> onSelected,
+  }) {
+    return FilterChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: onSelected,
+      backgroundColor: Colors.transparent,
+      selectedColor: Theme.of(context).primaryColor.withOpacity(0.2),
+      checkmarkColor: Theme.of(context).primaryColor,
+      labelStyle: TextStyle(
+        color: selected ? Theme.of(context).primaryColor : Colors.grey[700],
+        fontSize: 12,
+      ),
+      shape: StadiumBorder(
+        side: BorderSide(
+          color: selected 
+              ? Theme.of(context).primaryColor 
+              : Colors.grey[300]!,
+        ),
+      ),
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     );
   }
 
@@ -725,6 +795,16 @@ class _HomeScreenState extends State<HomeScreen> {
               ).then((_) => _carregarDados());
             },
           ),
+          Theme(
+          data: Theme.of(context).copyWith(
+            splashFactory: NoSplash.splashFactory,
+            highlightColor: Colors.transparent,
+          ),
+          child: ListTile(
+            
+            onTap: _handleSecretTap,
+          ),
+        ),
         ],
       ),
     );
@@ -836,19 +916,56 @@ class _HomeScreenState extends State<HomeScreen> {
       }).toList();
     }
 
-  Widget _buildFilterCheckbox(String label, bool value, ValueChanged<bool?> onChanged) {
+    Widget _buildFilterCheckbox(String label, bool value, ValueChanged<bool?> onChanged) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4.0),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Checkbox(
-              value: value,
-              onChanged: onChanged,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              visualDensity: VisualDensity.compact,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            color: value ? Theme.of(context).primaryColor.withOpacity(0.1) : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Checkbox(
+                value: value,
+                onChanged: onChanged,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              Flexible(
+                child: Text(label, 
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 14)),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    void _showCodeInputDialog(BuildContext context) {
+      final controller = TextEditingController();
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Código de Acesso'),
+          content: TextField(
+            controller: controller,
+            obscureText: true,
+            decoration: const InputDecoration(hintText: 'Digite o código'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                if (controller.text == 'duolingo#@!') { // Substitua por um código mais seguro
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (context) => const DatabaseExplorerScreen(),
+                  ));
+                }
+              },
+              child: const Text('Confirmar'),
             ),
-            Text(label, style: const TextStyle(fontSize: 12)),
           ],
         ),
       );
