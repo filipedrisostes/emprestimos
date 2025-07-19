@@ -1,3 +1,4 @@
+import 'package:emprestimos/screens/detalhes_obrigado_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:intl/intl.dart';
@@ -21,6 +22,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
   final ObrigadoDao _obrigadoDao = ObrigadoDao(DatabaseHelper.instance);
   final TransacaoPaiDao _transacaoPaiDao = TransacaoPaiDao(DatabaseHelper.instance);
   
+  
   final NumberFormat _currencyFormat = NumberFormat.currency(
     locale: 'pt_BR',
     symbol: 'R\$',
@@ -31,8 +33,13 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
   DateTime? _dataFinal;
   List<Transacao> _transacoes = [];
   List<TransacaoPai> _transacoesPai = [];
+  
   List<Obrigado> _obrigados = [];
   bool _isLoading = true;
+  // Controles de paginação
+  int _currentDevedoresPage = 0;
+  int _currentFieisPage = 0;
+  final int _itemsPerPage = 5;
 
   @override
   void initState() {
@@ -102,6 +109,17 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
       ..sort((a, b) => a.idTransacaoPai.compareTo(b.idTransacaoPai)); // Ordena por id_transacao_pai
   }
 
+  List<TransacaoPai> get _transacoesPaiFiltradas {
+    return _transacoesPai.where((transacaoPai) {
+      final dentroPeriodoInicial = _dataInicial == null || 
+          transacaoPai.dataEmprestimo.isAfter(_dataInicial!.subtract(const Duration(days: 1)));
+      final dentroPeriodoFinal = _dataFinal == null || 
+          transacaoPai.dataEmprestimo.isBefore(_dataFinal!.add(const Duration(days: 1)));
+      return dentroPeriodoInicial && dentroPeriodoFinal;
+    }).toList()
+      ..sort((a, b) => a.id!.compareTo(b.id!));
+  }
+
   List<Map<String, dynamic>> get _maioresDevedores {
     final Map<int, double> devedores = {};
     
@@ -133,10 +151,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
   List<Map<String, dynamic>> get _clientesFieis {
     final Map<int, int> contagem = {};
     
-    for (final transacao in _transacoesFiltradas) {
-      final transacaoPai = _transacoesPaiMap[transacao.idTransacaoPai];
-      if (transacaoPai == null) continue;
-      
+    for (final transacaoPai in _transacoesPaiFiltradas) {
       contagem[transacaoPai.idObrigado] = 
           (contagem[transacaoPai.idObrigado] ?? 0) + 1;
     }
@@ -311,17 +326,14 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                         children: [
                           const Text(
                             'Maiores Devedores',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                           ),
                           const SizedBox(height: 10),
                           if (_maioresDevedores.isEmpty)
                             const Text('Nenhum devedor no período')
-                          else
+                          else ...[
                             Column(
-                              children: _maioresDevedores.take(5).map((devedor) {
+                              children: _paginatedDevedores.map((devedor) {
                                 return ListTile(
                                   title: Text(devedor['obrigado'].nome),
                                   trailing: Text(
@@ -331,9 +343,20 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                                       color: Colors.red,
                                     ),
                                   ),
+                                  onTap: () => _navigateToObrigadoDetails(devedor['obrigado']),
                                 );
                               }).toList(),
                             ),
+                            _buildPaginationControls(
+                              _currentDevedoresPage,
+                              _maioresDevedores.length,
+                              (page) {
+                                setState(() {
+                                  _currentDevedoresPage = page;
+                                });
+                              },
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -349,17 +372,14 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                         children: [
                           const Text(
                             'Clientes Fiéis',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                           ),
                           const SizedBox(height: 10),
                           if (_clientesFieis.isEmpty)
                             const Text('Nenhum cliente no período')
-                          else
+                          else ...[
                             Column(
-                              children: _clientesFieis.take(5).map((cliente) {
+                              children: _paginatedFieis.map((cliente) {
                                 return ListTile(
                                   title: Text(cliente['obrigado'].nome),
                                   trailing: Text(
@@ -368,9 +388,20 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
+                                  onTap: () => _navigateToObrigadoDetails(cliente['obrigado']),
                                 );
                               }).toList(),
                             ),
+                            _buildPaginationControls(
+                              _currentFieisPage,
+                              _clientesFieis.length,
+                              (page) {
+                                setState(() {
+                                  _currentFieisPage = page;
+                                });
+                              },
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -491,6 +522,11 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                           SizedBox(
                             height: 300,
                             child: SfCartesianChart(
+                              zoomPanBehavior: ZoomPanBehavior(
+                                enablePinching: true,
+                                enablePanning: true, // Habilita a rolagem horizontal
+                                enableMouseWheelZooming: true,
+                              ),
                               primaryXAxis: CategoryAxis(
                                 labelRotation: -45,
                                 labelStyle: const TextStyle(fontSize: 10),
@@ -551,7 +587,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'Histórico de Juros Pagos',
+                            'Juros Pagos por Mês',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
@@ -561,6 +597,11 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                           SizedBox(
                             height: 300,
                             child: SfCartesianChart(
+                              zoomPanBehavior: ZoomPanBehavior(
+                                enablePinching: true,
+                                enablePanning: true, // Habilita a rolagem horizontal
+                                enableMouseWheelZooming: true,
+                              ),
                               primaryXAxis: CategoryAxis(
                                 labelRotation: -45,
                                 labelStyle: const TextStyle(fontSize: 10),
@@ -616,5 +657,56 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
               ),
             ),
     );
+  }
+
+  List<Map<String, dynamic>> get _paginatedDevedores {
+    final startIndex = _currentDevedoresPage * _itemsPerPage;
+    final endIndex = startIndex + _itemsPerPage;
+    
+    return _maioresDevedores.sublist(
+      startIndex.clamp(0, _maioresDevedores.length),
+      endIndex.clamp(0, _maioresDevedores.length),
+    );
+  }
+
+  List<Map<String, dynamic>> get _paginatedFieis {
+    final startIndex = _currentFieisPage * _itemsPerPage;
+    final endIndex = startIndex + _itemsPerPage;
+    
+    return _clientesFieis.sublist(
+      startIndex.clamp(0, _clientesFieis.length),
+      endIndex.clamp(0, _clientesFieis.length),
+    );
+  }
+
+  Widget _buildPaginationControls(int currentPage, int totalItems, ValueChanged<int> onPageChanged) {
+    final totalPages = (totalItems / _itemsPerPage).ceil();
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.chevron_left),
+          onPressed: currentPage > 0 ? () => onPageChanged(currentPage - 1) : null,
+        ),
+        Text('Página ${currentPage + 1} de $totalPages'),
+        IconButton(
+          icon: const Icon(Icons.chevron_right),
+          onPressed: currentPage < totalPages - 1 ? () => onPageChanged(currentPage + 1) : null,
+        ),
+      ],
+    );
+  }
+
+  void _navigateToObrigadoDetails(Obrigado obrigado) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => DetalhesObrigadoScreen(obrigado: obrigado),
+      ),
+    ).then((_) {
+      // Recarrega os dados quando volta da tela de detalhes
+      _carregarDados();
+    });
   }
 }

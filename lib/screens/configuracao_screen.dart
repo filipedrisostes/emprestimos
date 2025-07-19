@@ -65,81 +65,93 @@ class _ConfiguracaoScreenState extends State<ConfiguracaoScreen> {
       appBar: AppBar(
         title: const Text('Configuração'),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          children: [
-            TextFormField(
-              controller: _emailController,
-              decoration: const InputDecoration(
-                labelText: 'Email de recuperação',
-                border: OutlineInputBorder(),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(24.0),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: constraints.maxHeight,
               ),
-              keyboardType: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: 20),
-            TextFormField(
-              controller: _jurosController,
-              decoration: const InputDecoration(
-                labelText: 'Percentual de Juros',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.number,
-              inputFormatters: [_jurosMask],
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Informe o percentual';
-                }
-                final juros = _extrairValorNumerico(value);
-                if (juros < 0) {
-                  return 'Juros deve ser maior ou igual a zero';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 20),
-            TextFormField(
-              controller: _zapController,
-              decoration: const InputDecoration(
-                labelText: 'Celular',
-                border: OutlineInputBorder(),
-                hintText: '(99)99999-9999',
-              ),
-              keyboardType: TextInputType.phone,
-              inputFormatters: [_zapMask],
-            ),
-            const SizedBox(height: 20),
-            TextFormField(
-              controller: _diasVencimentoController,
-              decoration: const InputDecoration(
-                labelText: 'Dias para Vencimento',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: false),
-            ),
-            const SizedBox(height: 20),
-            TextButton(
-              onPressed: () async {
-                final juros =
-                    _extrairValorNumerico(_jurosController.text); // Correto
-                final email = _emailController.text;
-                final zap = _zapController.text;
-                final diasVenc = int.tryParse(_diasVencimentoController.text) ?? 0;
+              child: IntrinsicHeight(
+                child: Column(
+                  children: [
+                    TextFormField(
+                      controller: _emailController,
+                      decoration: const InputDecoration(
+                        labelText: 'Email de recuperação',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: 20),
+                    TextFormField(
+                      controller: _jurosController,
+                      decoration: const InputDecoration(
+                        labelText: 'Percentual de Juros',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [_jurosMask],
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Informe o percentual';
+                        }
+                        final juros = _extrairValorNumerico(value);
+                        if (juros < 0) {
+                          return 'Juros deve ser maior ou igual a zero';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 20),
+                    TextFormField(
+                      controller: _zapController,
+                      decoration: const InputDecoration(
+                        labelText: 'Celular',
+                        border: OutlineInputBorder(),
+                        hintText: '(99)99999-9999',
+                      ),
+                      keyboardType: TextInputType.phone,
+                      inputFormatters: [_zapMask],
+                    ),
+                    const SizedBox(height: 20),
+                    TextFormField(
+                      controller: _diasVencimentoController,
+                      decoration: const InputDecoration(
+                        labelText: 'Dias para Vencimento',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: false),
+                    ),
+                    const SizedBox(height: 20),
+                    TextButton(
+                      onPressed: () async {
+                        final juros =
+                            _extrairValorNumerico(_jurosController.text);
+                        final email = _emailController.text;
+                        final zap = _zapController.text;
+                        final diasVenc = int.tryParse(_diasVencimentoController.text) ?? 0;
 
-                await ConfiguracaoService.setJurosPadrao(juros);
-                await ConfiguracaoService.setEmailPadrao(email);
-                await ConfiguracaoService.setZapPadrao(zap);
-                await ConfiguracaoService.setDiasVencimentoPadrao(diasVenc.toString());
+                        await ConfiguracaoService.setJurosPadrao(juros);
+                        await ConfiguracaoService.setEmailPadrao(email);
+                        await ConfiguracaoService.setZapPadrao(zap);
+                        await ConfiguracaoService.setDiasVencimentoPadrao(diasVenc.toString());
 
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Configurações salvas com sucesso!')),
-                );
-              },
-              child: const Text('Salvar'),
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Configurações salvas com sucesso!')),
+                        );
+                      },
+                      child: const Text('Salvar'),
+                    ),
+                    const SizedBox(height: 20), // Espaço extra para o teclado
+                  ],
+                ),
+              ),
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -163,7 +175,7 @@ class ConfiguracaoService {
 
   static Future<String> getEmailPadrao() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_emailPadraoKey) ?? "Sem email definido";
+    return prefs.getString(_emailPadraoKey) ?? "";
   }
 
   static Future<void> setEmailPadrao(String email) async {
@@ -173,7 +185,7 @@ class ConfiguracaoService {
 
   static Future<String> getZapPadrao() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_zapPadraoKey) ?? "Sem celular definido";
+    return prefs.getString(_zapPadraoKey) ?? "";
   }
 
   static Future<void> setZapPadrao(String zap) async {

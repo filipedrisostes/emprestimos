@@ -19,6 +19,7 @@ class BackupScreen extends StatefulWidget {
 
 class _BackupScreenState extends State<BackupScreen> {
   String email = '';
+  bool _isProcessing = false;
 
   @override
   void initState() {
@@ -34,10 +35,12 @@ class _BackupScreenState extends State<BackupScreen> {
   }
 
   Future<void> _fazerBackup() async {
+    setState(() => _isProcessing = true);
     final dbPath = await _getDatabasePath();
     final dbFile = File(dbPath);
     if (!dbFile.existsSync()) {
       _showMessage('Arquivo de banco de dados não encontrado.');
+      setState(() => _isProcessing = false);
       return;
     }
 
@@ -46,19 +49,55 @@ class _BackupScreenState extends State<BackupScreen> {
       _showMessage('Backup enviado com sucesso!');
     } catch (e) {
       _showMessage('Erro ao fazer backup: $e');
+    } finally {
+      setState(() => _isProcessing = false);
     }
   }
 
   Future<void> _restaurarBackup() async {
+    setState(() => _isProcessing = true);
     try {
+      // 1. Fechar o banco de dados atual
+      await DatabaseHelper.instance.close();
+      
+      // 2. Obter caminho do banco de dados
+      final dbPath = await _getDatabasePath();
+      
+      // 3. Criar backup do banco atual (se existir)
+      if (File(dbPath).existsSync()) {
+        await File(dbPath).copy('$dbPath.db');
+      }
+      
+      // 4. Restaurar do Google Drive
       final success = await GoogleDriveBackup().restoreBackup(email);
+      
       if (success) {
-        _showMessage('Backup restaurado com sucesso!');
+        // 5. Verificar se o arquivo foi restaurado corretamente
+        try {
+          final restoredFile = File(dbPath);
+          if (!restoredFile.existsSync()) {
+            throw Exception('Arquivo restaurado não encontrado');
+          }
+          
+          // Tentar abrir o banco de dados para validar
+          final db = await databaseFactory.openDatabase(dbPath);
+          await db.close();
+          
+          _showMessage('Backup restaurado com sucesso!');
+        } catch (e) {
+          // Restaurar o backup anterior em caso de falha
+          if (File('$dbPath.db').existsSync()) {
+            await File('$dbPath.db').copy(dbPath);
+          }
+          _showMessage('Backup inválido. Restaurado versão anterior. Erro: $e');
+        }
       } else {
         _showMessage('Nenhum backup encontrado no Drive.');
       }
     } catch (e) {
       _showMessage('Erro ao restaurar backup: $e');
+    } finally {
+      setState(() => _isProcessing = false);
     }
   }
 
@@ -198,34 +237,51 @@ class _BackupScreenState extends State<BackupScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Backup & Restauração')),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              Text('Email configurado: $email'),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _fazerBackup,
+      body: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Email configurado: $email'),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isProcessing ? null : _fazerBackup,
                 child: const Text('Fazer Backup no Google Drive'),
               ),
-              const SizedBox(height: 10),
-              ElevatedButton(
-                onPressed: _restaurarBackup,
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isProcessing ? null : _restaurarBackup,
                 child: const Text('Restaurar Backup do Google Drive'),
               ),
-              const SizedBox(height: 10),
-              ElevatedButton(
-                onPressed: realizarBackupLocal,
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isProcessing ? null : realizarBackupLocal,
                 child: const Text('Fazer Backup Local'),
               ),
-              const SizedBox(height: 10),
-              ElevatedButton(
-                onPressed: () => restaurarBackupLocal(context),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isProcessing ? null : () => restaurarBackupLocal(context),
                 child: const Text('Restaurar Backup Local'),
               ),
+            ),
+            if (_isProcessing) ...[
+              const SizedBox(height: 20),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 10),
+              const Text('Processando...'),
             ],
-          ),
+          ],
         ),
       ),
     );

@@ -60,5 +60,17 @@ class TransacaoPaiDao {
     );
     return maps.map((map) => TransacaoPai.fromMap(map)).toList();
   }
+
+  Future<List<Map<String, dynamic>>> buscarQuantidadeEmprestimosPorCliente() async {
+    final db = await dbHelper.database;
+    final resultado = await db.rawQuery(
+      "SELECT o.nome, COUNT(*) as quantidade "
+      "FROM transacao_pai tp "
+      "JOIN obrigados o ON tp.id_obrigado = o.id "
+      "GROUP BY o.nome"
+    );
+    return resultado;
+  }
+
   
 }

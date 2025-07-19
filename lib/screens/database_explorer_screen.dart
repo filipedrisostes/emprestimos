@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:emprestimos/database_helper.dart';
 
+// Database Explorer Screen - Versão com tratamento para grandes resultados
 class DatabaseExplorerScreen extends StatefulWidget {
   const DatabaseExplorerScreen({super.key});
 
@@ -26,6 +27,12 @@ class _DatabaseExplorerScreenState extends State<DatabaseExplorerScreen> {
     _loadTables();
   }
 
+  @override
+  void dispose() {
+    _sqlController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadTables() async {
     setState(() => _isLoading = true);
     try {
@@ -47,6 +54,7 @@ class _DatabaseExplorerScreenState extends State<DatabaseExplorerScreen> {
     setState(() {
       _isLoading = true;
       _selectedTable = tableName;
+      _sqlResult = '';
     });
     try {
       final db = await dbHelper.database;
@@ -79,15 +87,14 @@ class _DatabaseExplorerScreenState extends State<DatabaseExplorerScreen> {
       final result = await db.rawQuery(_sqlController.text);
       
       setState(() {
-        _sqlResult = 'Resultado: ${result.length} linhas afetadas\n';
+        _sqlResult = 'Resultado: ${result.length} linhas\n\n';
         if (result.isNotEmpty) {
-          _sqlResult += 'Colunas: ${result.first.keys.join(', ')}\n';
-          _sqlResult += 'Dados:\n${result.map((e) => e.toString()).join('\n')}';
+          _sqlResult += 'Colunas: ${result.first.keys.join(', ')}\n\n';
+          _sqlResult += result.map((e) => e.toString()).join('\n\n');
         }
         _isLoading = false;
       });
       
-      // Recarrega a tabela atual se a SQL pode ter afetado os dados
       if (_selectedTable != null && 
           _sqlController.text.toLowerCase().contains(_selectedTable!.toLowerCase())) {
         await _loadTableData(_selectedTable!);
@@ -100,54 +107,15 @@ class _DatabaseExplorerScreenState extends State<DatabaseExplorerScreen> {
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+      SnackBar(content: Text(message)),
     );
-  }
-
-  Future<void> _deleteRow(int id) async {
-    if (_selectedTable == null) return;
-    
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirmar exclusão'),
-        content: const Text('Tem certeza que deseja excluir este registro?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Excluir'),
-          ),
-        ],
-      ),
-    );
-    
-    if (confirm != true) return;
-    
-    setState(() => _isLoading = true);
-    try {
-      final db = await dbHelper.database;
-      await db.delete(
-        _selectedTable!,
-        where: 'id = ?',
-        whereArgs: [id],
-      );
-      await _loadTableData(_selectedTable!);
-      _showError('Registro excluído com sucesso!');
-    } catch (e) {
-      setState(() => _isLoading = false);
-      _showError('Erro ao excluir: ${e.toString()}');
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Explorador do Banco de Dados'),
+        title: const Text('Explorador do Banco'),
       ),
       body: Column(
         children: [
@@ -197,16 +165,41 @@ class _DatabaseExplorerScreenState extends State<DatabaseExplorerScreen> {
                   onPressed: _executeSql,
                   child: const Text('Executar SQL'),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Text(
-                    _sqlResult,
-                    style: const TextStyle(fontFamily: 'monospace'),
-                  ),
-                ),
               ],
             ),
           ),
+          
+          // Resultados
+          if (_sqlResult.isNotEmpty)
+            Expanded(
+              child: Container(
+                margin: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return SingleChildScrollView(
+                      padding: const EdgeInsets.all(8),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minWidth: constraints.maxWidth,
+                          minHeight: constraints.maxHeight,
+                        ),
+                        child: SelectableText(
+                          _sqlResult,
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
           
           // Dados da tabela
           Expanded(
@@ -216,25 +209,72 @@ class _DatabaseExplorerScreenState extends State<DatabaseExplorerScreen> {
                     ? const Center(child: Text('Selecione uma tabela'))
                     : _tableData.isEmpty
                         ? const Center(child: Text('Nenhum dado encontrado'))
-                        : SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: DataTable(
-                              columns: _columns.map((column) {
-                                return DataColumn(label: Text(column));
-                              }).toList(),
-                              rows: _tableData.map((row) {
-                                return DataRow(
-                                  cells: _columns.map((column) {
-                                    return DataCell(
-                                      Text(row[column]?.toString() ?? 'NULL'),
-                                      onTap: () {
-                                        // Implemente a edição aqui se desejar
-                                      },
-                                    );
-                                  }).toList(),
-                                );
-                              }).toList(),
-                            ),
+                        : Column(
+                            children: [
+                              // Cabeçalho
+                              Container(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                color: Theme.of(context).primaryColor.withOpacity(0.1),
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: _columns.map((column) {
+                                      return SizedBox(
+                                        width: 180,
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                                          child: Text(
+                                            column,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: Theme.of(context).primaryColor,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                                ),
+                              ),
+                              // Dados
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.vertical,
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: Column(
+                                      children: _tableData.map((row) {
+                                        return Container(
+                                          decoration: BoxDecoration(
+                                            border: Border(
+                                              bottom: BorderSide(
+                                                color: Colors.grey.shade300,
+                                                width: 1,
+                                              ),
+                                            ),
+                                          ),
+                                          child: Row(
+                                            children: _columns.map((column) {
+                                              return SizedBox(
+                                                width: 180,
+                                                child: Padding(
+                                                  padding: const EdgeInsets.all(8),
+                                                  child: Text(
+                                                    row[column]?.toString() ?? 'NULL',
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              );
+                                            }).toList(),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
           ),
         ],
