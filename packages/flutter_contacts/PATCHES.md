@@ -5,7 +5,7 @@ Android and Dart APIs are unchanged.
 
 The iOS plugin retains its FlutterPluginRegistrar instead of force-unwrapping
 UIApplicationDelegate.window at registration. UIScene leaves that window nil.
-Native contact dialogs resolve registrar.viewController() at presentation time
+Native contact dialogs resolve registrar.viewController at presentation time
 and return a FlutterError if the view is unavailable, instead of crashing or
 leaving the Dart call unanswered.
 

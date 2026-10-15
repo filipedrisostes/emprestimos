@@ -606,7 +606,7 @@ public class SwiftFlutterContactsPlugin: NSObject, FlutterPlugin, FlutterStreamH
                     contactView.delegate = self
                     // https://stackoverflow.com/a/39594589
                     let navigationController = UINavigationController(rootViewController: contactView)
-                    guard let presenter = self.registrar.viewController() else {
+                    guard let presenter = self.registrar.viewController else {
                         result(FlutterError(code: "no_view_controller", message: "Contact UI requires an attached Flutter view", details: nil))
                         return
                     }
@@ -618,7 +618,7 @@ public class SwiftFlutterContactsPlugin: NSObject, FlutterPlugin, FlutterStreamH
             DispatchQueue.main.async {
                 let contactPicker = CNContactPickerViewController()
                 contactPicker.delegate = self
-                guard let presenter = self.registrar.viewController() else {
+                guard let presenter = self.registrar.viewController else {
                     result(FlutterError(code: "no_view_controller", message: "Contact UI requires an attached Flutter view", details: nil))
                     return
                 }
@@ -646,7 +646,7 @@ public class SwiftFlutterContactsPlugin: NSObject, FlutterPlugin, FlutterStreamH
                 contactView.delegate = self
                 // https://stackoverflow.com/a/39594589
                 let navigationController = UINavigationController(rootViewController: contactView)
-                guard let presenter = self.registrar.viewController() else {
+                guard let presenter = self.registrar.viewController else {
                     result(FlutterError(code: "no_view_controller", message: "Contact UI requires an attached Flutter view", details: nil))
                     return
                 }
