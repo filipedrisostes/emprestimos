@@ -12,6 +12,9 @@ info = plistlib.loads((root / 'ios/Runner/Info.plist').read_bytes())
 privacy = plistlib.loads((root / 'ios/Runner/PrivacyInfo.xcprivacy').read_bytes())
 framework = plistlib.loads((root / 'ios/Flutter/AppFrameworkInfo.plist').read_bytes())
 project = (root / 'ios/Runner.xcodeproj/project.pbxproj').read_text()
+entitlements = plistlib.loads((root / 'ios/Runner/Runner.entitlements').read_bytes())
+assert entitlements['keychain-access-groups'] == ['$(AppIdentifierPrefix)$(CFBundleIdentifier)']
+assert project.count('CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;') == 3
 assert info['NSContactsUsageDescription']
 assert info['UIFileSharingEnabled'] and info['LSSupportsOpeningDocumentsInPlace']
 assert info['UIApplicationSceneManifest']['UISceneConfigurations']

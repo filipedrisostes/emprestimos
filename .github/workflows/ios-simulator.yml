@@ -62,7 +62,12 @@ jobs:
         run: flutter test
 
       - name: Build for iOS Simulator
-        run: flutter build ios --simulator --debug --no-codesign
+        run: flutter build ios --simulator --debug
+
+      - name: Verify simulator signature and Keychain access
+        run: |
+          codesign --verify --deep --strict build/ios/iphonesimulator/Runner.app
+          python3 tool/check_simulator_keychain.py build/ios/iphonesimulator/Runner.app
 
       # Archive before uploading to preserve executable permissions and symlinks.
       - name: Package simulator app

@@ -58,3 +58,17 @@ A análise Dart e os testes de lógica podem ser executados no Windows. A verifi
 No iPhone, validar: login/restauração Google, cadastro manual e por agenda com permissão concedida/negada, criação/pagamento/edição, exportação/importação no Arquivos, notificações, retomada offline e fechamento diário. Para publicação, conferir o relatório de privacidade agregado dos plugins e as declarações do App Store Connect conforme o uso efetivo dos dados; o manifesto de APIs não substitui essas declarações.
 
 Referências oficiais: [Flutter iOS](https://docs.flutter.dev/platform-integration/ios/setup), [UIScene](https://docs.flutter.dev/release/breaking-changes/uiscenedelegate), [Google Sign-In iOS](https://developers.google.com/identity/sign-in/ios/start-integrating), [manifestos de privacidade Apple](https://developer.apple.com/documentation/technotes/tn3183-adding-required-reason-api-entries-to-your-privacy-manifest).
+
+## Keychain e login Google no simulador
+
+O Runner declara seu grupo privado de Keychain em `Runner.entitlements`. No
+iPhone, o Xcode resolve o prefixo da conta Apple durante a assinatura normal.
+No simulador, a identidade `-` usa assinatura local (ad hoc), sem certificado
+Apple. O workflow não usa mais `--no-codesign`: o Xcode precisa processar os
+entitlements durante a compilação. Depois, verifica a assinatura e o grupo
+de Keychain incorporado antes de publicar o ZIP.
+
+Após gerar um novo artefato, envie o ZIP interno como nova versão no Appetize
+e abra uma nova sessão dessa versão. Se o erro persistir, capture os logs do
+login, especialmente o código OSStatus do Keychain. O serviço pode alterar a
+assinatura durante a instalação; o teste no Appetize/iPhone continua necessário.
