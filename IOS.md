@@ -72,3 +72,10 @@ Após gerar um novo artefato, envie o ZIP interno como nova versão no Appetize
 e abra uma nova sessão dessa versão. Se o erro persistir, capture os logs do
 login, especialmente o código OSStatus do Keychain. O serviço pode alterar a
 assinatura durante a instalação; o teste no Appetize/iPhone continua necessário.
+
+A verificação de Keychain examina a seção `__TEXT,__entitlements` de cada
+arquitetura do executável do simulador. Quando essa seção está ausente, usa
+os entitlements da assinatura. O Xcode pode manter apenas permissões de
+depuração na assinatura do simulador; por isso, consultar só `codesign` não
+é suficiente. Permissões ausentes, grupos incorretos ou variáveis não
+resolvidas continuam reprovando a verificação.
