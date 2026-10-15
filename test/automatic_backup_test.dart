@@ -1,11 +1,11 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:emprestimos/database_helper.dart';
 import 'package:emprestimos/dao/obrigado_dao.dart';
-import 'package:emprestimos/dao/transacao_dao.dart';
 import 'package:emprestimos/models/obrigado.dart';
-import 'package:emprestimos/models/transacao_pai.dart';
 import 'package:emprestimos/services/automatic_backup_service.dart';
 import 'package:emprestimos/services/backup_service.dart';
 
@@ -15,32 +15,48 @@ void main() {
   late Directory dir;
   late DatabaseHelper helper;
   late AutomaticBackupService service;
+  late DateTime now;
   late bool online;
-  late List<List<String>> uploaded;
+  late Map<String, List<String>> remote;
   late List<String> messages;
+  Completer<void>? gate;
+  Completer<void>? started;
   Future<void> upload(File file) async {
     if (!online) throw const SocketException('offline');
+    if (gate != null) {
+      started?.complete();
+      final wait = gate!;
+      gate = null;
+      await wait.future;
+    }
+    final metadata = jsonDecode(await File('${file.path}.json').readAsString());
     final db =
         await openDatabase(file.path, readOnly: true, singleInstance: false);
     try {
       expect((await db.rawQuery('PRAGMA integrity_check')).single.values.first,
           'ok');
-      uploaded.add((await db.query('obrigados'))
-          .map((r) => r['nome'] as String)
-          .toList());
+      remote[metadata['remoteName'] as String] =
+          (await db.query('obrigados', orderBy: 'id'))
+              .map((r) => r['nome'] as String)
+              .toList();
     } finally {
       await db.close();
     }
   }
 
+  AutomaticBackupService create() => AutomaticBackupService(
+      helper, Directory('${dir.path}/queue'), upload, messages.add,
+      now: () => now);
   setUp(() async {
-    dir = await Directory.systemTemp.createTemp('automatic_backup_test');
+    now = DateTime(2026, 10, 14, 22, 54);
+    dir = await Directory.systemTemp.createTemp('daily_backup_test');
     helper = DatabaseHelper.forPath('${dir.path}/live.db');
     online = false;
-    uploaded = [];
+    remote = {};
     messages = [];
-    service = AutomaticBackupService(
-        helper, Directory('${dir.path}/queue'), upload, messages.add);
+    gate = null;
+    started = null;
+    service = create();
     await service.initialize();
   });
   tearDown(() async {
@@ -48,33 +64,104 @@ void main() {
     await helper.close();
     await dir.delete(recursive: true);
   });
+  Future<int> insert(String name) =>
+      ObrigadoDao(helper).insertObrigado(Obrigado(nome: name, zap: '123'));
 
-  test(
-      'cada alteração tem snapshot distinto; fila sobrevive reinício e envia em ordem',
-      () async {
-    final dao = ObrigadoDao(helper);
-    final id = await dao.insertObrigado(Obrigado(nome: 'Antes', zap: '123'));
-    await dao.updateObrigado(Obrigado(id: id, nome: 'Depois', zap: '123'));
-    await dao.deleteObrigado(id);
+  test('substitui o atual a cada alteração e consolida fila offline', () async {
+    final id = await insert('Antes');
+    online = true;
     await service.sendPending();
-    expect((await service.pending()).length, 3);
-    expect(uploaded, isEmpty);
+    expect(remote, {
+      'bkp_atual.db': ['Antes']
+    });
+    online = false;
+    await ObrigadoDao(helper)
+        .updateObrigado(Obrigado(id: id, nome: 'Depois', zap: '123'));
+    await insert('Outro');
+    await service.sendPending();
+    expect((await service.pending()).length, 1);
+    online = true;
+    await service.sendPending();
+    expect(remote, {
+      'bkp_atual.db': ['Depois', 'Outro']
+    });
+  });
+
+  test('meia-noite congela ontem e alterações de hoje não mudam histórico',
+      () async {
+    await insert('Ontem');
+    now = DateTime(2026, 10, 15, 0, 0);
+    online = true;
+    await service.retry();
+    expect(remote['bkp_dia_2026-10-14.db'], ['Ontem']);
+    await insert('Hoje');
+    await service.sendPending();
+    expect(remote['bkp_atual.db'], ['Ontem', 'Hoje']);
+    expect(remote['bkp_dia_2026-10-14.db'], ['Ontem']);
+    await service.retry();
+    expect(remote.length, 2);
+  });
+
+  test('primeira alteração após meia-noite arquiva antes de modificar banco',
+      () async {
+    await insert('Ontem');
+    now = DateTime(2026, 10, 15, 1, 5);
+    await insert('Hoje');
+    online = true;
+    await service.sendPending();
+    expect(remote['bkp_dia_2026-10-14.db'], ['Ontem']);
+    expect(remote['bkp_atual.db'], ['Ontem', 'Hoje']);
+  });
+
+  test('reinício recupera dias sem uso inclusive virada de mês e ano',
+      () async {
+    now = DateTime(2026, 12, 31, 23, 59);
+    // Start this scenario with its own initial calendar baseline.
     await service.dispose();
-    service = AutomaticBackupService(
-        helper, Directory('${dir.path}/queue'), upload, messages.add);
+    await Directory('${dir.path}/queue').delete(recursive: true);
+    service = create();
+    await service.initialize();
+    await insert('Fechamento');
+    await service.dispose();
+    now = DateTime(2027, 1, 3, 8);
+    service = create();
     await service.initialize();
     online = true;
     await service.sendPending();
-    expect(uploaded, [
-      ['Antes'],
-      ['Depois'],
-      <String>[]
-    ]);
+    expect(remote.keys.toSet(), {
+      'bkp_atual.db',
+      'bkp_dia_2026-12-31.db',
+      'bkp_dia_2027-01-01.db',
+      'bkp_dia_2027-01-02.db'
+    });
+    expect(remote.values.every((rows) => rows.single == 'Fechamento'), true);
+    await service.retry();
     expect(await service.pending(), isEmpty);
-    expect(messages.last, 'Backup automático em dia.');
   });
 
-  test('rollback, leitura e exclusão inexistente não geram backup', () async {
+  test('confirmação de upload antigo não descarta versão nova concorrente',
+      () async {
+    await insert('Versão1');
+    await service.sendPending();
+    online = true;
+    final finish = Completer<void>();
+    gate = finish;
+    started = Completer<void>();
+    final sending = service.sendPending();
+    await started!.future;
+    await insert('Versão2');
+    now = DateTime(2026, 10, 15, 0, 1);
+    await insert('Hoje');
+    finish.complete();
+    await sending;
+    expect(remote['bkp_dia_2026-10-14.db'], ['Versão1', 'Versão2']);
+    expect(remote['bkp_atual.db'], ['Versão1', 'Versão2', 'Hoje']);
+    expect(await service.pending(), isEmpty);
+  });
+
+  test('rollback, leitura e exclusão inexistente não alteram backup', () async {
+    online = true;
+    await service.sendPending();
     final dao = ObrigadoDao(helper);
     await dao.getAllObrigados();
     await dao.deleteObrigado(999);
@@ -86,76 +173,51 @@ void main() {
     expect(await service.pending(), isEmpty);
   });
 
-  test('falha ao criar cópia mantém dados e recupera snapshot antes da próxima alteração', () async {
-    service.prepare = (_) async => throw const FileSystemException('sem espaço');
-    final dao = ObrigadoDao(helper);
-    await dao.insertObrigado(Obrigado(nome: 'Preservado', zap: '123'));
-    expect((await dao.getAllObrigados()).single.nome, 'Preservado');
-    expect(await service.pending(), isEmpty);
-    await expectLater(dao.insertObrigado(Obrigado(nome: 'Bloqueado', zap: '123')), throwsStateError);
+  test('falha de snapshot recupera estado anterior antes de nova alteração',
+      () async {
+    service.prepare =
+        (_) async => throw const FileSystemException('sem espaço');
+    await insert('Preservado');
+    await expectLater(insert('Bloqueado'), throwsStateError);
+    now = DateTime(2026, 10, 15, 0, 1);
     service.prepare = null;
-    await dao.insertObrigado(Obrigado(nome: 'Próximo', zap: '123'));
-    await service.sendPending();
+    await insert('Hoje');
     online = true;
     await service.sendPending();
-    expect(uploaded, [['Preservado'], ['Preservado', 'Próximo']]);
+    expect(remote['bkp_dia_2026-10-14.db'], ['Preservado']);
+    expect(remote['bkp_atual.db'], ['Preservado', 'Hoje']);
   });
 
-  test('parcelas e pagamentos geram uma cópia por operação confirmada',
-      () async {
-    final id = await ObrigadoDao(helper)
-        .insertObrigado(Obrigado(nome: 'Cliente', zap: '123'));
-    final dao = TransacaoDao(helper);
-    final pai = await dao.criarEmprestimo(
-        TransacaoPai(
-            idObrigado: id,
-            dataEmprestimo: DateTime(2026, 1, 1),
-            valorEmprestado: 1000,
-            percentualJuros: 30,
-            qtdeParcelas: 3),
-        DateTime(2026, 2, 1));
-    final rows = await dao.getTransacoesByPai(pai);
-    await dao.pagarJuros(rows.first.id!, DateTime(2026, 2, 1));
-    await dao.pagarJuros(rows.first.id!, DateTime(2026, 2, 1));
-    await dao.quitar(rows.last.id!, DateTime(2026, 3, 1), futuras: true);
-    await service.sendPending();
-    final files = await service.pending();
-    expect(files.length, 4); // client, loan, interest, settlement
-    final copy = await openDatabase(files[1].path,
-        readOnly: true, singleInstance: false);
-    expect((await copy.query('transacoes')).length, 3);
-    expect(await copy.rawQuery('PRAGMA foreign_key_check'), isEmpty);
-    await copy.close();
-  });
-
-  test('alterações concorrentes não misturam os estados dos snapshots',
-      () async {
-    final dao = ObrigadoDao(helper);
-    await Future.wait(List.generate(
-        5, (i) => dao.insertObrigado(Obrigado(nome: 'Cliente$i', zap: '123'))));
-    await service.sendPending();
-    online = true;
-    await Future.wait([service.sendPending(), service.sendPending()]);
-    expect(uploaded.map((r) => r.length), [1, 2, 3, 4, 5]);
-  });
-
-  test('restauração também gera cópia e snapshots não fecham conexão ativa',
-      () async {
-    final dao = ObrigadoDao(helper);
-    await dao.insertObrigado(Obrigado(nome: 'Original', zap: '123'));
-    final connection = await helper.database;
+  test('restaurar hoje não modifica fechamento de ontem', () async {
+    await insert('Original');
     final backup =
         await BackupService(helper).exportar('${dir.path}/manual.db');
-    expect(connection.isOpen, true);
-    await dao.insertObrigado(Obrigado(nome: 'Temporário', zap: '123'));
+    await insert('Final de ontem');
+    now = DateTime(2026, 10, 15, 1);
     await BackupService(helper).restaurar(backup);
-    await service.sendPending();
     online = true;
     await service.sendPending();
-    expect(uploaded, [
-      ['Original'],
-      ['Original', 'Temporário'],
-      ['Original']
-    ]);
+    expect(remote['bkp_dia_2026-10-14.db'], ['Original', 'Final de ontem']);
+    expect(remote['bkp_atual.db'], ['Original']);
+  });
+
+  test('fila da versão antiga preserva último estado de cada dia', () async {
+    await service.dispose();
+    await Directory('${dir.path}/queue').delete(recursive: true);
+    await insert('Primeiro');
+    final first =
+        await BackupService(helper).exportar('${dir.path}/queue/bkp_auto_1.db');
+    await first.setLastModified(DateTime(2026, 10, 13, 18));
+    await insert('Último');
+    final last =
+        await BackupService(helper).exportar('${dir.path}/queue/bkp_auto_2.db');
+    await last.setLastModified(DateTime(2026, 10, 13, 23));
+    service = create();
+    await service.initialize();
+    online = true;
+    await service.sendPending();
+    expect(remote['bkp_dia_2026-10-13.db'], ['Primeiro', 'Último']);
+    expect(remote['bkp_atual.db'], ['Primeiro', 'Último']);
+    expect(remote.length, 2);
   });
 }

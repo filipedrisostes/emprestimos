@@ -1,29 +1,75 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart';
+import 'dart:async';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 import '../dao/transacao_dao.dart';
 import '../dao/obrigado_dao.dart';
 import '../database_helper.dart';
+import '../models/transacao.dart';
 
-class NotificacaoService {
+class NotificacaoService with WidgetsBindingObserver {
   static final instance = NotificacaoService._();
   NotificacaoService._();
   final _plugin = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
-  Future<void> atualizar({bool requestPermission = false}) async {
-    if (!Platform.isAndroid) return;
+  Future<void> _work = Future.value();
+  void start() {
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(atualizar());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(atualizar());
+  }
+
+  static List<Transacao> proximas(List<Transacao> items, DateTime now,
+      {int? limit}) {
+    final result = items.where((t) {
+      final due = t.dataVencimento;
+      return t.id != null &&
+          t.dataPagamentoCompleto == null &&
+          t.dataPagamentoRetorno == null &&
+          due != null &&
+          DateTime(due.year, due.month, due.day, 9).isAfter(now);
+    }).toList()
+      ..sort((a, b) {
+        final byDate = a.dataVencimento!.compareTo(b.dataVencimento!);
+        return byDate != 0 ? byDate : a.id!.compareTo(b.id!);
+      });
+    return limit == null ? result : result.take(limit).toList();
+  }
+
+  Future<void> atualizar({bool requestPermission = false}) {
+    final result = _work.then((_) => _atualizar(requestPermission));
+    _work = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return result;
+  }
+
+  Future<void> _atualizar(bool requestPermission) async {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
     try {
       if (!_initialized) {
         tzdata.initializeTimeZones();
         await _plugin.initialize(const InitializationSettings(
-            android: AndroidInitializationSettings('@mipmap/ic_launcher')));
+            android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+            iOS: DarwinInitializationSettings(
+                requestAlertPermission: false,
+                requestBadgePermission: false,
+                requestSoundPermission: false)));
         _initialized = true;
       }
       final android = _plugin.resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>();
       if (requestPermission) await android?.requestNotificationsPermission();
+      if (requestPermission && Platform.isIOS) {
+        await _plugin
+            .resolvePlatformSpecificImplementation<
+                IOSFlutterLocalNotificationsPlugin>()
+            ?.requestPermissions(alert: true, badge: true, sound: true);
+      }
       final exact = await android?.canScheduleExactNotifications() ?? false;
       final dao = TransacaoDao(DatabaseHelper.instance);
       final clientes = {
@@ -33,7 +79,8 @@ class NotificacaoService {
       };
       await _plugin.cancelAll();
       final now = DateTime.now();
-      for (final t in await dao.getAllTransacoes()) {
+      for (final t in proximas(await dao.getAllTransacoes(), now,
+          limit: Platform.isIOS ? 64 : null)) {
         if (t.id == null ||
             t.dataPagamentoCompleto != null ||
             t.dataPagamentoRetorno != null ||
@@ -47,6 +94,8 @@ class NotificacaoService {
             '${clientes[t.idObrigado] ?? 'Cliente'}: parcela ${t.parcela} vence hoje.',
             tz.TZDateTime.from(when.toUtc(), tz.UTC),
             const NotificationDetails(
+                iOS: DarwinNotificationDetails(
+                    presentAlert: true, presentSound: true),
                 android: AndroidNotificationDetails(
                     'vencimentos_channel', 'Notificações de Vencimento',
                     channelDescription: 'Lembretes dos vencimentos cadastrados',

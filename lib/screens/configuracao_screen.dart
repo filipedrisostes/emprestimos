@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../configuracao_service.dart';
+import '../services/notificacao_service.dart';
 
 class ConfiguracaoScreen extends StatefulWidget {
   const ConfiguracaoScreen({super.key});
@@ -151,6 +152,18 @@ class _ConfiguracaoScreenState extends State<ConfiguracaoScreen> {
                 );
               },
               child: const Text('Salvar'),
+            ),
+            TextButton.icon(
+              icon: const Icon(Icons.notifications_outlined),
+              label: const Text('Ativar lembretes de vencimento'),
+              onPressed: () async {
+                await NotificacaoService.instance
+                    .atualizar(requestPermission: true);
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text(
+                        'Confira a permissão de notificações nos ajustes do aparelho.')));
+              },
             ),
           ],
         )),

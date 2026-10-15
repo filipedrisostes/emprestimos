@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -47,8 +49,29 @@ class DatabaseHelper {
         return result;
       });
 
-  Future<String> get databasePath async =>
-      pathOverride ?? join(await getDatabasesPath(), 'emprestimos.db');
+  Future<String> get databasePath async {
+    if (pathOverride != null) return pathOverride!;
+    if (!Platform.isIOS)
+      return join(await getDatabasesPath(), 'emprestimos.db');
+    // Documents is visible in Files; keep the active database private.
+    final dir = Directory(
+        join((await getApplicationSupportDirectory()).path, 'databases'));
+    await dir.create(recursive: true);
+    final target = join(dir.path, 'emprestimos.db');
+    final legacy = join(await getDatabasesPath(), 'emprestimos.db');
+    if (!await File(target).exists() && await File(legacy).exists()) {
+      final old = await openDatabase(legacy);
+      try {
+        await old.rawQuery('PRAGMA wal_checkpoint(FULL)');
+      } finally {
+        await old.close();
+      }
+      final temporary = await File(legacy).copy('$target.import');
+      await temporary.rename(target);
+    }
+    return target;
+  }
+
   Future<Database> get database async {
     if (_database?.isOpen ?? false) return _database!;
     return _opening ??= _open();

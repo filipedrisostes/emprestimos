@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart';
 import 'services/automatic_backup_service.dart';
+import 'services/notificacao_service.dart';
 //import 'package:workmanager/workmanager.dart';
 
 void main() async {
@@ -14,6 +15,7 @@ void main() async {
   await AutomaticBackupService.start();
 
   runApp(const MyApp());
+  NotificacaoService.instance.start();
 }
 
 class MyApp extends StatelessWidget {

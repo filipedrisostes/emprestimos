@@ -1,0 +1,78 @@
+name: iOS Simulator
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, main]
+    paths:
+      - '.github/workflows/ios-simulator.yml'
+      - 'ios/**'
+      - 'lib/**'
+      - 'assets/**'
+      - 'test/**'
+      - 'tool/**'
+      - 'pubspec.*'
+  pull_request:
+    paths:
+      - '.github/workflows/ios-simulator.yml'
+      - 'ios/**'
+      - 'lib/**'
+      - 'assets/**'
+      - 'test/**'
+      - 'tool/**'
+      - 'pubspec.*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-simulator-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.6'
+          channel: stable
+          cache: true
+
+      - name: Show build environment
+        run: |
+          flutter --version
+          xcodebuild -version
+          pod --version
+
+      - name: Install Flutter dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Check iOS configuration
+        run: python3 tool/check_ios.py --require-google
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build for iOS Simulator
+        run: flutter build ios --simulator --debug --no-codesign
+
+      # Archive before uploading to preserve executable permissions and symlinks.
+      - name: Package simulator app
+        run: |
+          test -d build/ios/iphonesimulator/Runner.app
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent build/ios/iphonesimulator/Runner.app dist/emprestimos-ios-simulator.zip
+
+      - name: Upload simulator app
+        uses: actions/upload-artifact@v4
+        with:
+          name: emprestimos-ios-simulator
+          path: dist/emprestimos-ios-simulator.zip
+          if-no-files-found: error
+          retention-days: 7

@@ -77,16 +77,21 @@ class _BackupScreenState extends State<BackupScreen> {
       dir = Directory('/storage/emulated/0/Download/EmprestimosBackups');
     } else {
       dir = await getApplicationDocumentsDirectory();
+      if (Platform.isIOS) dir = Directory('${dir.path}/Backups');
     }
     final file = await _backup.exportar(
         '${dir.path}/backup_emprestimos_${DateTime.now().millisecondsSinceEpoch}.db');
-    return 'Backup criado em: ${file.path}';
+    return Platform.isIOS
+        ? 'Backup salvo. Abra Arquivos > No Meu iPhone > Empréstimos > Backups.'
+        : 'Backup criado em: ${file.path}';
   }
 
   Future<String?> _restoreLocal() async {
     final file = await openFile(acceptedTypeGroups: [
       const XTypeGroup(
-          label: 'Banco de dados', extensions: ['db', 'sqlite', 'sqlite3'])
+          label: 'Banco de dados',
+          extensions: ['db', 'sqlite', 'sqlite3'],
+          uniformTypeIdentifiers: ['public.data'])
     ]);
     if (file == null || !mounted || !await _confirmRestore()) return null;
     await _backup.restaurar(File(file.path));

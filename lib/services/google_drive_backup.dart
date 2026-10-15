@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
-import 'package:crypto/crypto.dart';
+import 'drive_backup_store.dart';
+import 'ios_configuration.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
@@ -14,6 +15,7 @@ class GoogleDriveBackup {
       GoogleSignIn(scopes: [drive.DriveApi.driveFileScope]);
   Future<AuthenticatedClient> _client(
       {bool silent = false, String? expectedAccount}) async {
+    if (Platform.isIOS) await IOSConfiguration.checkGoogleSignIn();
     final account = silent
         ? await _googleSignIn.signInSilently(suppressErrors: false)
         : await _googleSignIn.signIn();
@@ -33,96 +35,86 @@ class GoogleDriveBackup {
     client.close();
   }
 
+  static Future<void> _uploads = Future.value();
+  static Future<void> _serialize(Future<void> Function() action) {
+    final result = _uploads.then((_) => action());
+    _uploads = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return result;
+  }
+
   static Future<void> bindAutomaticAccount(File file) async {
     final prefs = await SharedPreferences.getInstance();
-    await File('${file.path}.json').writeAsString(
-        jsonEncode({
-          'account': prefs.getString('backup_google_account'),
-        }),
-        flush: true);
-  }
-
-  Future<void> uploadAutomatic(File file) async {
     final sidecar = File('${file.path}.json');
-    final metadata = await sidecar.exists()
+    final data = await sidecar.exists()
         ? jsonDecode(await sidecar.readAsString()) as Map<String, dynamic>
         : <String, dynamic>{};
-    final client = await _client(
-        silent: true, expectedAccount: metadata['account'] as String?);
-    try {
-      final api = drive.DriveApi(client);
-      final identity = File('${file.path}.remote');
-      if (await identity.exists()) {
-        metadata.addAll(
-            jsonDecode(await identity.readAsString()) as Map<String, dynamic>);
-        if (metadata['account'] != _googleSignIn.currentUser!.id) {
-          throw StateError('Conecte a conta original do backup pendente');
-        }
-      } else {
-        metadata['account'] ??= _googleSignIn.currentUser!.id;
-        metadata['id'] =
-            (await api.files.generateIds(count: 1, space: 'drive')).ids!.single;
-        // Publish an immutable identity before sending bytes; interrupted writes
-        // leave only .tmp and no upload has started. Retries reuse the same ID.
-        final temporary = File('${identity.path}.tmp');
-        await temporary.writeAsString(jsonEncode(metadata), flush: true);
-        await temporary.rename(identity.path);
-      }
-      final id = metadata['id'] as String;
-      try {
-        final existing =
-            await api.files.get(id, $fields: 'id,md5Checksum') as drive.File;
-        final checksum = (await md5.bind(file.openRead()).first).toString();
-        if (existing.md5Checksum == checksum) return;
-        throw StateError('O backup remoto não corresponde à cópia local');
-      } on drive.DetailedApiRequestError catch (e) {
-        if (e.status != 404) rethrow;
-      }
-      final stamp = RegExp(r'bkp_auto_(.+)_[a-f0-9]+\.db$')
-          .firstMatch(file.path)
-          ?.group(1);
-      final capturedAt = (await file.lastModified()).toUtc();
-      await api.files
-          .create(
-              drive.File()
-                ..id = id
-                ..name = file.uri.pathSegments.last
-                ..createdTime = capturedAt
-                ..description =
-                    'Backup automático após alteração no banco. Data UTC: $stamp'
-                ..mimeType = 'application/octet-stream',
-              uploadMedia: drive.Media(file.openRead(), await file.length()))
-          .timeout(const Duration(minutes: 3));
-    } finally {
-      client.close();
-    }
+    data['account'] = prefs.getString('backup_google_account');
+    await sidecar.writeAsString(jsonEncode(data), flush: true);
   }
 
-  Future<void> uploadBackup(File file, String email) async {
-    final client = await _client();
-    try {
-      final api = drive.DriveApi(client);
-      final now = DateTime.now();
-      final name =
-          'bkp_${now.day.toString().padLeft(2, '0')}_${now.month.toString().padLeft(2, '0')}_${now.year}.db';
-      await api.files.create(drive.File()..name = name,
-          uploadMedia: drive.Media(file.openRead(), await file.length()));
-    } finally {
-      client.close();
-    }
+  Future<void> uploadAutomatic(File file) => _serialize(() async {
+        final sidecar = File('${file.path}.json');
+        final metadata =
+            jsonDecode(await sidecar.readAsString()) as Map<String, dynamic>;
+        final owner = File('${file.path}.owner');
+        final expected = await owner.exists()
+            ? await owner.readAsString()
+            : metadata['account'] as String?;
+        final client = await _client(silent: true, expectedAccount: expected);
+        try {
+          // Bind an initially unassigned snapshot before attempting any upload.
+          if (!await owner.exists()) {
+            final temp = File('${owner.path}.tmp');
+            await temp.writeAsString(_googleSignIn.currentUser!.id,
+                flush: true);
+            await temp.rename(owner.path);
+          }
+          await _store(client).then(
+              (store) => store.put(file, metadata['remoteName'] as String));
+        } finally {
+          client.close();
+        }
+      });
+
+  Future<DriveBackupStore> _store(AuthenticatedClient client) async {
+    final dir = await getApplicationSupportDirectory();
+    return DriveBackupStore(
+        drive.DriveApi(client),
+        Directory('${dir.path}/drive-backup-identities'),
+        _googleSignIn.currentUser!.id);
   }
+
+  Future<void> uploadBackup(File file, String email) => _serialize(() async {
+        final client = await _client();
+        try {
+          await (await _store(client)).put(file, 'bkp_atual.db');
+        } finally {
+          client.close();
+        }
+      });
 
   Future<bool> restoreBackup(String email) async {
     final client = await _client();
     File? temp;
     try {
       final api = drive.DriveApi(client);
-      final files = (await api.files.list(
-              q: "name contains 'bkp_' and trashed = false",
+      // Prefer the live backup even when a daily archive was uploaded later.
+      var files = (await api.files.list(
+              q: "name = 'bkp_atual.db' and trashed = false",
               spaces: 'drive',
-              orderBy: 'createdTime desc',
+              orderBy: 'modifiedTime desc',
+              pageSize: 1,
               $fields: 'files(id,name)'))
           .files;
+      if (files == null || files.isEmpty) {
+        files = (await api.files.list(
+                q: "name contains 'bkp_' and trashed = false",
+                spaces: 'drive',
+                orderBy: 'modifiedTime desc',
+                pageSize: 1,
+                $fields: 'files(id,name)'))
+            .files;
+      }
       if (files == null || files.isEmpty) return false;
       final media = await api.files.get(files.first.id!,
           downloadOptions: drive.DownloadOptions.fullMedia) as drive.Media;
