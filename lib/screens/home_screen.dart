@@ -1,623 +1,333 @@
-import 'package:emprestimos/dao/obrigado_dao.dart';
-import 'package:emprestimos/dao/transacao_dao.dart';
-import 'package:emprestimos/database_helper.dart';
-
-import 'package:emprestimos/models/obrigado.dart';
-import 'package:emprestimos/models/transacao.dart';
-import 'package:emprestimos/screens/cadastro_obrigado_screen.dart';
-import 'package:emprestimos/screens/cadastro_transacao_screen.dart';
-import 'package:emprestimos/screens/configuracao_screen.dart';
-import 'package:emprestimos/screens/estatisticas_screen.dart';
-import 'package:emprestimos/screens/backup_screen.dart';
-import 'package:emprestimos/screens/lista_obrigados_screen.dart';
-import 'package:emprestimos/services/offline_sync_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../dao/transacao_dao.dart';
+import '../dao/obrigado_dao.dart';
+import '../database_helper.dart';
+import '../models/obrigado.dart';
+import '../models/transacao.dart';
+import '../services/notificacao_service.dart';
+import 'cadastro_transacao_screen.dart';
+import 'configuracao_screen.dart';
+import 'estatisticas_screen.dart';
+import 'backup_screen.dart';
+import 'lista_obrigados_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
-
   @override
-  _HomeScreenState createState() => _HomeScreenState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final TransacaoDao _transacaoDao = TransacaoDao(DatabaseHelper.instance);
-  final ObrigadoDao _obrigadoDao = ObrigadoDao(DatabaseHelper.instance);
-  List<Transacao> _transacoes = [];
-  double _totalReceber = 0;
-  DateTime _currentMonth = DateTime.now();
-  List<Obrigado> _obrigados = [];
-  bool _isLoading = true;
-  bool _isSyncing = false;
-  
-  final NumberFormat _currencyFormat = NumberFormat.currency(
-    locale: 'pt_BR',
-    symbol: 'R\$',
-    decimalDigits: 2,
-  );
-
+  final _dao = TransacaoDao(DatabaseHelper.instance);
+  final _money = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
+  final _date = DateFormat('dd/MM/yyyy');
+  DateTime _month = DateTime.now();
+  List<Transacao> _items = [];
+  Map<int, Obrigado> _clientes = {};
+  Map<int, int> _parcelas = {};
+  bool _loading = true;
+  String? _filter;
+  String? _error;
+  int _loadGeneration = 0;
   @override
   void initState() {
     super.initState();
-    _carregarDados();
-    _enviarMensagensAutomaticamente();
+    _load();
   }
 
-
-  Future<void> _enviarWhatsApp(Obrigado obrigado, double valor) async {
-    // Remove caracteres não numéricos do telefone
-    String numeroLimpo = obrigado.zap.replaceAll(RegExp(r'[^0-9]'), '');
-    if (numeroLimpo.startsWith('0') && numeroLimpo.length > 1) {
-      numeroLimpo = numeroLimpo.substring(1);
-    }
-    String? mensagemPersonalizada = obrigado.mensagemPersonalizada;
-    mensagemPersonalizada = mensagemPersonalizada?.replaceAll('#', obrigado.nome); 
-    final mensagem = Uri.encodeFull(
-      mensagemPersonalizada != null 
-      ? mensagemPersonalizada
-      : 'Olá ${obrigado.nome}, tudo bem? Lembrando que o valor de ${_currencyFormat.format(valor)} vence este mês.'
-    );
-
-    final url = 'https://wa.me/$numeroLimpo?text=$mensagem';
-    final uri = Uri.parse(url);
-
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(
-          uri,
-          mode: LaunchMode.externalApplication, // Força abertura no app externo
-        );
-      } else {
-        // Fallback para abrir no navegador
-        final webUrl = 'https://web.whatsapp.com/send?phone=$numeroLimpo&text=$mensagem';
-        await launchUrl(
-          Uri.parse(webUrl),
-          mode: LaunchMode.externalApplication,
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao abrir WhatsApp: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }  
-
-  void _proximoMes() {
+  Future<void> _load() async {
+    final generation = ++_loadGeneration;
     setState(() {
-      _currentMonth = DateTime(_currentMonth.year, _currentMonth.month + 1, 1);
-      _carregarDados();
+      _loading = true;
+      _error = null;
     });
-  }
-
-  void _mesAnterior() {
-    setState(() {
-      _currentMonth = DateTime(_currentMonth.year, _currentMonth.month - 1, 1);
-      _carregarDados();
-    });
-  }
-
-  Future<void> _carregarDados() async {
-    setState(() => _isLoading = true);
-    
     try {
-      final primeiroDia = DateTime(_currentMonth.year, _currentMonth.month, 1);
-      final ultimoDia = DateTime(_currentMonth.year, _currentMonth.month + 1, 0);
-      
-      final [transacoes, obrigados] = await Future.wait([
-        _transacaoDao.getTransacoesByPeriodo(primeiroDia, ultimoDia),
-        _obrigadoDao.getAllObrigados(),
-      ] as Iterable<Future>);
-      
-      for (var t in transacoes) {
-        print('Transação carregada: ${t.toMap()}');
-      }
-
-      double total = 0;
-      for (var transacao in transacoes) {
-        if ((transacao.dataPagamentoCompleto == null && transacao.dataPagamentoRetorno == null)) {
-          total += transacao.retorno;
-        }
-      }
-      
-      setState(()  {
-        _totalReceber = total;
-        _obrigados = obrigados;
-        _isLoading = false;
-        // Enfileirar automaticamente ao carregar dados
-        /*final payload = {
-          'obrigados': _obrigados.map((o) => o.toJson()).toList(),
-          'transacoes': _transacoes.map((t) => t.toJson()).toList(),
+      final items = await _dao.getTransacoesByPeriodo(
+          DateTime(_month.year, _month.month, 1),
+          DateTime(_month.year, _month.month + 1, 0));
+      final clients =
+          await ObrigadoDao(DatabaseHelper.instance).getAllObrigados();
+      final parents =
+          await (await DatabaseHelper.instance.database).query('transacao_pai');
+      if (!mounted || generation != _loadGeneration) return;
+      setState(() {
+        _items = items;
+        _clientes = {for (final c in clients) c.id!: c};
+        _parcelas = {
+          for (final p in parents) p['id'] as int: p['qtde_parcelas'] as int
         };
-        await OfflineSyncService().enqueue(
-          'https://SEU_BACKEND_AQUI/sync', // ajuste para sua URL real
-          payload,
-        );*/
-        // —————————————————————
+        _loading = false;
       });
     } catch (e) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao carregar dados: ${e.toString()}')),
-      );
+      if (mounted && generation == _loadGeneration)
+        setState(() {
+          _loading = false;
+          _error = '$e';
+        });
     }
   }
 
-  Future<void> _marcarComoPagoTotal(Transacao transacao) async {
-    final confirmado = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirmar Pagamento'),
-        content: const Text('Deseja marcar esta transação como totalmente paga?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Confirmar'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmado == true) {
-      if (transacao.id != null) {
-        await _transacaoDao.updateDataPagamentoCompleto(transacao.id!, DateTime.now());
-      } else {
-        throw Exception('Transação ID não pode ser nulo');
-      }
-      await _carregarDados();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pagamento registrado com sucesso!')),
-      );
-    }
+  bool _open(Transacao t) =>
+      t.dataPagamentoCompleto == null && t.dataPagamentoRetorno == null;
+  bool _matches(Transacao t) => switch (_filter) {
+        'Em Aberto' => _open(t),
+        'Pago Total' => t.dataPagamentoCompleto != null,
+        'Pago Juros' => t.dataPagamentoRetorno != null,
+        'Vencido' =>
+          _open(t) && (t.dataVencimento?.isBefore(DateTime.now()) ?? false),
+        _ => true,
+      };
+  void _move(int delta) {
+    setState(() => _month = DateTime(_month.year, _month.month + delta));
+    _load();
   }
 
-  Future<void> _marcarComoPagoJuros(Transacao transacao) async {
+  Future<void> _page(Widget page) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+    if (mounted) await _load();
+  }
+
+  Future<bool> _confirm(String title, String text) async =>
+      await showDialog<bool>(
+          context: context,
+          builder: (ctx) =>
+              AlertDialog(title: Text(title), content: Text(text), actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Cancelar')),
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Confirmar')),
+              ])) ??
+      false;
+  Future<void> _action(Transacao t, String action) async {
+    final title = action == 'juros'
+        ? 'Confirmar Pagamento de Juros'
+        : action == 'quitar'
+            ? 'Quitar Todas as Parcelas'
+            : 'Excluir Transação';
+    final text = action == 'juros'
+        ? 'Confirmar o pagamento dos juros? Se sim, será lançada uma nova cobrança para o próximo mês'
+        : action == 'quitar'
+            ? 'Isso marcará TODAS as parcelas futuras como pagas. Continuar?'
+            : 'Tem certeza que deseja excluir esta transação?';
+    if (!await _confirm(title, text)) return;
     try {
-      if (transacao.id != null) {
-        await _transacaoDao.updateDataPagamentoRetorno(transacao.id!, DateTime.now());
-        
-        final novaTransacao = Transacao(
-          id: null, // Corrigido aqui
-          idObrigado: transacao.idObrigado,
-          dataEmprestimo: DateTime(
-            transacao.dataEmprestimo.year,
-            transacao.dataEmprestimo.month + 1,
-            transacao.dataEmprestimo.day,
-          ),
-          valorEmprestado: transacao.valorEmprestado,
-          percentualJuros: transacao.percentualJuros,
-          retorno: transacao.retorno,
-        );
-        
-        await _transacaoDao.insertTransacao(novaTransacao);
-        await _carregarDados();
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Juros pagos e nova transação criada!')),
-        );
+      if (action == 'juros') {
+        await _dao.pagarJuros(t.id!, DateTime.now());
+      } else if (action == 'quitar') {
+        await _dao.quitar(t.id!, DateTime.now(), futuras: true);
       } else {
-        throw Exception('Transação ID não pode ser nulo');
+        await _dao.deleteTransacao(t.id!);
+      }
+      await NotificacaoService.instance.atualizar();
+      if (!mounted) return;
+      await _load();
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(action == 'juros'
+                ? 'Juros pagos com sucesso! Nova cobrança gerada.'
+                : action == 'quitar'
+                    ? 'Transação quitada com sucesso!'
+                    : 'Transação excluída!')));
+    } catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Erro: $e')));
+    }
+  }
+
+  Future<void> _whatsapp(Transacao t, Obrigado c) async {
+    final number =
+        c.zap.replaceAll(RegExp(r'[^0-9]'), '').replaceFirst(RegExp(r'^0'), '');
+    final message = (c.mensagemPersonalizada?.isNotEmpty ?? false)
+        ? c.mensagemPersonalizada!.replaceAll('#', c.nome)
+        : 'Olá ${c.nome}, tudo bem? Lembrando que o valor de ${_money.format(t.retorno)} vence este mês.';
+    try {
+      if (!await launchUrl(Uri.https('wa.me', '/$number', {'text': message}),
+          mode: LaunchMode.externalApplication)) {
+        throw StateError('Não foi possível abrir o WhatsApp');
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao processar pagamento: ${e.toString()}')),
-      );
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erro ao abrir WhatsApp: $e')));
     }
   }
-
-  Obrigado _encontrarObrigado(int? idObrigado) {
-  if (idObrigado == null) {
-    return Obrigado(
-      id: 0,
-      nome: 'ID Obrigado inválido',
-      zap: '---',
-    );
-  }
-
-  return _obrigados.firstWhere(
-    (o) => o.id == idObrigado,
-    orElse: () => Obrigado(
-      id: idObrigado,
-      nome: 'Obrigado não encontrado',
-      zap: '---',
-    ),
-  );
-}
-
 
   @override
   Widget build(BuildContext context) {
+    final visible = _items.where(_matches).toList();
+    final total =
+        _items.where(_open).fold<double>(0, (sum, t) => sum + t.retorno);
+    final label = DateFormat('MMMM/yyyy', 'pt_BR').format(_month);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Empréstimos'),
-        actions: [
-          
+        appBar: AppBar(title: const Text('Empréstimos'), actions: [
           IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const CadastroTransacaoScreen()),
-              ).then((_) {
-                 _carregarDados();
-              } );
-            },
-          ),
-        ],
-      ),
-      drawer: _buildDrawer(),
-      body: Stack(
-        children: [
-          // Conteúdo visível
-          Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back_ios),
-                      onPressed: _mesAnterior,
-                    ),
-                    Text(
-                      _capitalize(DateFormat('MMMM/yyyy').format(_currentMonth)),
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.arrow_forward_ios),
-                      onPressed: _proximoMes,
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : FutureBuilder<List<Transacao>>(
-                        future: _transacaoDao.getTransacoesByPeriodo(
-                          DateTime(_currentMonth.year, _currentMonth.month, 1),
-                          DateTime(_currentMonth.year, _currentMonth.month + 1, 0),
-                        ),
-                        builder: (context, snapshot) {
-                                                  if (snapshot.hasError) {
-                          print('Erro completo no snapshot: ${snapshot.error}');
-                          return const Center(
-                            child: Text('Erro ao carregar as transações.'),
-                          );
-                        }
-
-                          final transacoes = snapshot.data ?? [];
-
-                          if (transacoes.isEmpty) {
-                            return const Center(child: Text('Nenhuma transação este mês'));
-                          }
-
-                          return ListView.builder(
-                            itemCount: transacoes.length,
-                            itemBuilder: (context, index) {
-                              final transacao = transacoes[index];
-                              final obrigado = _encontrarObrigado(transacao.idObrigado);
-
-                              return _buildTransacaoCard(transacao, obrigado);
-                            },
-                          );
-                        },
-                      ),
-              ),
-              _buildTotalReceber(),
-            ],
-          ),
-
-          // Camada invisível para capturar gestos
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent, // 👈 importante
-              onHorizontalDragEnd: (details) {
-                if (details.primaryVelocity != null) {
-                  if (details.primaryVelocity! < 0) {
-                    _proximoMes();
-                  } else if (details.primaryVelocity! > 0) {
-                    _mesAnterior();
-                  }
-                }
-              },
-            ),
-          ),
-          if (_isSyncing)
-            const Padding(
-              padding: EdgeInsets.all(8.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(width: 10),
-                  Text("Sincronizando..."),
-                ],
-              ),
-            ),
-
-        ],
-      ),
-
-    );
-  }
-
-  Widget _buildTransacaoCard(Transacao transacao, Obrigado obrigado) {
-  final hoje = DateTime.now();
-  var corCard;
-  if(transacao.dataPagamentoCompleto != null){
-    corCard = Colors.green[100];
-  }
-  else if (transacao.dataPagamentoRetorno != null){
-    corCard = Colors.blue[100];
-  }
-  else if (transacao.dataVencimento != null && transacao.dataVencimento!.isBefore(hoje)){
-    corCard = Colors.red[100];
-  }
-  else{
-    corCard = null;
-  }
-  return Card( 
-    margin: const EdgeInsets.all(8),
-    elevation: 2,
-    color: corCard,
-    child: ListTile(
-      title: Text(obrigado.nome),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Valor: ${_currencyFormat.format(transacao.valorEmprestado)}'),
-          Text('Juros: ${transacao.percentualJuros}%'),
-          Text('Total: ${_currencyFormat.format(transacao.retorno)}'),
-          if (transacao.dataVencimento != null)
-            Text('Prazo: ${DateFormat('dd/MM/yyyy').format(transacao.dataVencimento!)}'),
-          if (transacao.dataPagamentoCompleto != null)
-            Text('Pago em: ${DateFormat('dd/MM/yyyy').format(transacao.dataPagamentoCompleto!)}'),
-          if (transacao.dataPagamentoRetorno != null)
-            Text('Juros pagos em: ${DateFormat('dd/MM/yyyy').format(transacao.dataPagamentoRetorno!)}'),
-        ],
-      ),
-      trailing: Wrap(
-        spacing: -20,
-        children: [
-          if (transacao.dataPagamentoCompleto == null)
-            IconButton(
-              icon: const Icon(Icons.attach_money, color: Colors.green),
-              tooltip: 'Marcar como totalmente pago',
-              onPressed: () => _marcarComoPagoTotal(transacao),
-            ),
-          if (transacao.dataPagamentoCompleto == null)
-            IconButton(
-              icon: const Icon(Icons.percent, color: Colors.blue),
-              tooltip: 'Pagar apenas juros',
-              onPressed: () => _marcarComoPagoJuros(transacao),
-            ),
+              tooltip: 'Atualizar',
+              icon: const Icon(Icons.refresh),
+              onPressed: _load),
           IconButton(
-            icon: const Icon(Icons.edit, color: Colors.orange),
-            tooltip: 'Editar Transação',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => CadastroTransacaoScreen(transacao: transacao),
-                ),
-              ).then((_) => _carregarDados());
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete, color: Colors.red),
-            tooltip: 'Excluir Transação',
-            onPressed: () async {
-              final confirmar = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Excluir Transação'),
-                  content: const Text('Tem certeza que deseja excluir esta transação?'),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-                    TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Excluir')),
-                  ],
-                ),
-              );
-              if (confirmar == true) {
-                if (transacao.id != null) {
-                  await _transacaoDao.deleteTransacao(transacao.id!);
-                } else {
-                  throw Exception('Transação ID não pode ser nulo');
-                }
-                await _carregarDados();
-              }
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.phone_android, color: Colors.green),
-            onPressed: () => _enviarWhatsApp(obrigado, transacao.valorEmprestado),
-          )
-        ],
-      ),
-    ),
-  );
-} // fim _buildTransacaoCard
-
-  Widget _buildTotalReceber() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.blue[50],
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          const Text(
-            'Total a receber este mês:',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          Text(
-            _currencyFormat.format(_totalReceber),
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDrawer() {
-    return Drawer(
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
+              tooltip: 'Cadastrar Transação',
+              icon: const Icon(Icons.add),
+              onPressed: () => _page(const CadastroTransacaoScreen())),
+        ]),
+        drawer: Drawer(
+            child: ListView(padding: EdgeInsets.zero, children: [
           const DrawerHeader(
-            decoration: BoxDecoration(color: Colors.blue),
-            child: Text(
-              'Menu',
-              style: TextStyle(color: Colors.white, fontSize: 24),
+              decoration: BoxDecoration(color: Colors.blue),
+              child: Text('Menu',
+                  style: TextStyle(color: Colors.white, fontSize: 24))),
+          for (final entry in <(IconData, String, Widget)>[
+            (Icons.settings, 'Configurações', const ConfiguracaoScreen()),
+            (Icons.person_add, 'Clientes', const ListaObrigadosScreen()),
+            (
+              Icons.monetization_on,
+              'Cadastrar Transação',
+              const CadastroTransacaoScreen()
             ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.settings),
-            title: const Text('Configurações'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ConfiguracaoScreen(),
-                ),
-              ).then((_) => _carregarDados());
+            (Icons.bar_chart, 'Estatísticas', const EstatisticasScreen()),
+            (Icons.restore_page, 'Backup e restauração', const BackupScreen()),
+          ])
+            ListTile(
+                leading: Icon(entry.$1),
+                title: Text(entry.$2),
+                onTap: () {
+                  Navigator.pop(context);
+                  _page(entry.$3);
+                }),
+        ])),
+        body: GestureDetector(
+            onHorizontalDragEnd: (d) {
+              final v = d.primaryVelocity ?? 0;
+              if (v.abs() > 100) _move(v < 0 ? 1 : -1);
             },
-            //onTap: () => _abrirConfigJuros(context),
-          ),
-          ListTile(
-            leading: const Icon(Icons.person_add),
-            title: const Text('Clientes'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ListaObrigadosScreen(),
-                ),
-              ).then((_) => _carregarDados());
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.monetization_on),
-            title: const Text('Cadastrar Transação'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const CadastroTransacaoScreen(),
-                ),
-              ).then((_) => _carregarDados());
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.bar_chart),
-            title: const Text('Estatísticas'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const EstatisticasScreen(),
-                ),
-              ).then((_) => _carregarDados());
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.restore_page),
-            title: const Text('Backup e restauração'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const BackupScreen(),
-                ),
-              ).then((_) => _carregarDados());
-            },
-          ),
-        ],
-      ),
-    );
+            child: Column(children: [
+              Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                            onPressed: () => _move(-1),
+                            icon: const Icon(Icons.arrow_back_ios)),
+                        Text('${label[0].toUpperCase()}${label.substring(1)}',
+                            style: const TextStyle(
+                                fontSize: 20, fontWeight: FontWeight.bold)),
+                        IconButton(
+                            onPressed: () => _move(1),
+                            icon: const Icon(Icons.arrow_forward_ios)),
+                      ])),
+              Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Wrap(spacing: 10, children: [
+                    for (final filter in [
+                      'Em Aberto',
+                      'Pago Total',
+                      'Pago Juros',
+                      'Vencido'
+                    ])
+                      OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.black,
+                              backgroundColor:
+                                  _filter == filter ? Colors.blue[100] : null,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 14),
+                              textStyle: const TextStyle(fontSize: 9)),
+                          onPressed: () => setState(() =>
+                              _filter = _filter == filter ? null : filter),
+                          child: Text(filter)),
+                  ])),
+              Expanded(
+                  child: _loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _error != null
+                          ? Center(child: Text('Erro ao carregar: $_error'))
+                          : visible.isEmpty
+                              ? const Center(
+                                  child: Text('Nenhuma transação este mês'))
+                              : ListView.builder(
+                                  itemCount: visible.length,
+                                  itemBuilder: (_, i) => _card(visible[i]))),
+              Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius:
+                          const BorderRadius.vertical(top: Radius.circular(8))),
+                  child: SafeArea(
+                      top: false,
+                      child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Total a receber:',
+                                style: TextStyle(
+                                    fontSize: 16, fontWeight: FontWeight.bold)),
+                            Text(_money.format(total),
+                                style: const TextStyle(
+                                    fontSize: 18, fontWeight: FontWeight.bold)),
+                          ]))),
+            ])));
   }
 
-
-  String _capitalize(String text) {
-    if (text.isEmpty) return text;
-    return text[0].toUpperCase() + text.substring(1);
+  Widget _card(Transacao t) {
+    final c = _clientes[t.idObrigado] ??
+        Obrigado(id: t.idObrigado, nome: 'Obrigado não encontrado', zap: '');
+    final color = t.dataPagamentoCompleto != null
+        ? Colors.green[100]
+        : t.dataPagamentoRetorno != null
+            ? Colors.blue[100]
+            : (t.dataVencimento?.isBefore(DateTime.now()) ?? false)
+                ? Colors.red[100]
+                : null;
+    return Card(
+        margin: const EdgeInsets.all(8),
+        elevation: 2,
+        color: color,
+        child: ListTile(
+            title: Text(c.nome),
+            subtitle:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Data: ${_date.format(t.dataEmprestimo)}'),
+              Text(
+                  'Parcela: ${t.parcela} de ${_parcelas[t.idTransacaoPai] ?? 1}'),
+              Text('Valor: ${_money.format(t.valorEmprestado)}'),
+              Text('Juros: ${t.percentualJuros}%'),
+              Text('Total: ${_money.format(t.retorno)}'),
+              if (t.dataVencimento != null)
+                Text('Prazo: ${_date.format(t.dataVencimento!)}'),
+              if (t.dataPagamentoCompleto != null)
+                Text('Pago em: ${_date.format(t.dataPagamentoCompleto!)}'),
+              if (t.dataPagamentoRetorno != null)
+                Text('Juros: ${_date.format(t.dataPagamentoRetorno!)}'),
+            ]),
+            trailing: Wrap(spacing: -20, children: [
+              if (_open(t)) ...[
+                IconButton(
+                    tooltip: 'Marcar como totalmente pago',
+                    icon: const Icon(Icons.attach_money, color: Colors.green),
+                    onPressed: () => _action(t, 'quitar')),
+                IconButton(
+                    tooltip: 'Pagar apenas juros',
+                    icon: const Icon(Icons.percent, color: Colors.blue),
+                    onPressed: () => _action(t, 'juros')),
+                IconButton(
+                    tooltip: 'Editar Transação',
+                    icon: const Icon(Icons.edit, color: Colors.orange),
+                    onPressed: () =>
+                        _page(CadastroTransacaoScreen(transacao: t))),
+                IconButton(
+                    tooltip: 'Excluir Transação',
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    onPressed: () => _action(t, 'excluir')),
+              ],
+              IconButton(
+                  tooltip: 'WhatsApp',
+                  icon: const Icon(Icons.phone_android, color: Colors.green),
+                  onPressed: () => _whatsapp(t, c)),
+            ])));
   }
-
-  Future<void> _enviarMensagensAutomaticamente() async {
-  final hoje = DateTime.now();
-  
-  // Filtra transações vencidas e não pagas
-  final vencidas = _transacoes.where((transacao) {
-    return transacao.dataVencimento != null &&
-           transacao.dataVencimento!.isBefore(hoje) &&
-           transacao.dataPagamentoCompleto == null;
-  }).toList();
-
-  for (var transacao in vencidas) {
-    final obrigado = _encontrarObrigado(transacao.idObrigado);
-
-    // Usa a mensagem personalizada se existir, senão a padrão
-    final mensagem = Uri.encodeFull(
-      obrigado.mensagemPersonalizada != null && obrigado.mensagemPersonalizada!.isNotEmpty
-          ? obrigado.mensagemPersonalizada!
-          : 'Olá ${obrigado.nome}, tudo bem? Lembrando que o valor de ${_currencyFormat.format(transacao.retorno)} venceu.'
-    );
-
-    final numeroLimpo = obrigado.zap.replaceAll(RegExp(r'[^0-9]'), '');
-    final url = 'https://wa.me/$numeroLimpo?text=$mensagem';
-    final uri = Uri.parse(url);
-
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao enviar mensagem: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-}
-
-
-
-
-}
-
-class ConfiguracaoService {
-  static const _jurosPadraoKey = 'juros_padrao';
-
-  static Future<double> getJurosPadrao() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getDouble(_jurosPadraoKey) ?? 5.0;
-  }
-
-  static Future<void> setJurosPadrao(double valor) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_jurosPadraoKey, valor);
-  }
-  
-  
-
 }

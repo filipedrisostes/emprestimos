@@ -2,7 +2,8 @@ class Obrigado {
   final int? id;
   final String nome;
   final String zap;
-  final String? mensagemPersonalizada; // ✅ Novo campo opcional para mensagem personalizada
+  final String?
+      mensagemPersonalizada; // ✅ Novo campo opcional para mensagem personalizada
 
   Obrigado({
     this.id,
@@ -16,7 +17,8 @@ class Obrigado {
       'id': id,
       'nome': nome,
       'zap': zap,
-      'mensagem_personalizada': mensagemPersonalizada, // ✅ Adicionado aqui também
+      'mensagem_personalizada':
+          mensagemPersonalizada, // ✅ Adicionado aqui também
     };
   }
 
@@ -34,17 +36,19 @@ class Obrigado {
       id: map['id'],
       nome: map['nome'],
       zap: map['zap'],
-      mensagemPersonalizada: map['mensagemPersonalizada'], // ✅ Carregar o novo campo
+      mensagemPersonalizada: map['mensagem_personalizada'] ??
+          map['mensagemPersonalizada'], // ✅ Carregar o novo campo
     );
   }
-  
+
   // Criar uma instância a partir de JSON (Map)
   factory Obrigado.fromJson(Map<String, dynamic> json) {
     return Obrigado(
       id: json['id'],
       nome: json['nome'],
       zap: json['zap'],
-      mensagemPersonalizada: json['mensagem_personalizada'], // ✅ Carregar o novo campo
+      mensagemPersonalizada:
+          json['mensagem_personalizada'], // ✅ Carregar o novo campo
     );
-  }  
+  }
 }

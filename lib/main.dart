@@ -1,34 +1,17 @@
-import 'package:emprestimos/background_backup.dart';
 import 'package:emprestimos/database_helper.dart';
 import 'package:emprestimos/screens/home_screen.dart';
-import 'package:emprestimos/services/offline_sync_service.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart';
+import 'services/automatic_backup_service.dart';
 //import 'package:workmanager/workmanager.dart';
 
-// Defina AQUI o mesmo nome da task do background_backup.dart
-const String _backupTask = "periodicBackup";
-
-void main() async{
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   Intl.defaultLocale = 'pt_BR';
-    // 1) inicializa o dispatcher
-  /*Workmanager().initialize(
-    callbackDispatcher,
-    isInDebugMode: false, // true = mais logs
-  );
-
-  // 2) registra a tarefa periódica (a cada 24h)
-  Workmanager().registerPeriodicTask(
-    '1',
-    _backupTask,
-    frequency: Duration(hours: 24),
-    existingWorkPolicy: ExistingWorkPolicy.keep,
-  );*/
-  // Inicializa o listener de conectividade
-  OfflineSyncService();  // apenas instanciar já dispara o listener
   await DatabaseHelper.instance.database; // força inicialização
+  await AutomaticBackupService.start();
 
   runApp(const MyApp());
 }
@@ -52,11 +35,10 @@ class MyApp extends StatelessWidget {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-  supportedLocales: const [
-    Locale('pt', 'BR'),
-  ],
+        supportedLocales: const [
+          Locale('pt', 'BR'),
+        ],
       ),
-      
     );
   }
 }

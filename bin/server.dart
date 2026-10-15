@@ -40,13 +40,13 @@ void main() async {
 }
 
 Middleware logMiddleware() {
-  final _logger = Logger('API');
+  final logger = Logger('API');
   return (innerHandler) {
     return (request) async {
       final start = DateTime.now();
       final response = await innerHandler(request);
       final duration = DateTime.now().difference(start);
-      _logger.info(
+      logger.info(
           '${request.method} ${request.requestedUri} → ${response.statusCode} (${duration.inMilliseconds} ms)');
       return response;
     };

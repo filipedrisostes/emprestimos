@@ -1,7 +1,5 @@
-import 'dart:convert';
 import '../db.dart';
 import '../utils/hash_helper.dart';
-import 'package:crypto/crypto.dart';
 
 class AuthService {
   Future<String?> autenticar(String telefone, String senha) async {

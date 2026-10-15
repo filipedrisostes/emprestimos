@@ -7,8 +7,7 @@ class ObrigadoDao {
   ObrigadoDao(this.dbHelper);
 
   Future<int> insertObrigado(Obrigado obrigado) async {
-    final db = await dbHelper.database;
-    return await db.insert('obrigados', obrigado.toMap());
+    return dbHelper.write((db) => db.insert('obrigados', obrigado.toMap()));
   }
 
   Future<List<Obrigado>> getAllObrigados() async {
@@ -20,22 +19,20 @@ class ObrigadoDao {
   }
 
   Future<int> updateObrigado(Obrigado obrigado) async {
-    final db = await dbHelper.database;
-    return await db.update(
-      'obrigados',
-      obrigado.toMap(),
-      where: 'id = ?',
-      whereArgs: [obrigado.id],
-    );
+    return dbHelper.write((db) => db.update(
+          'obrigados',
+          obrigado.toMap(),
+          where: 'id = ?',
+          whereArgs: [obrigado.id],
+        ));
   }
 
   Future<int> deleteObrigado(int id) async {
-    final db = await dbHelper.database;
-    return await db.delete(
-      'obrigados',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    return dbHelper.write((db) => db.delete(
+          'obrigados',
+          where: 'id = ?',
+          whereArgs: [id],
+        ));
   }
 
   Future<Obrigado?> getObrigadoById(int id) async {

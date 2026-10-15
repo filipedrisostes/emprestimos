@@ -1,12 +1,6 @@
 // lib/background_backup.dart
 
-import 'dart:io';
-import 'package:path/path.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:path_provider/path_provider.dart';
 //import 'package:workmanager/workmanager.dart';
-import 'services/google_drive_backup.dart';
-import 'configuracao_service.dart';
 
 const _backupTask = "periodicBackup";
 

@@ -1,3 +1,4 @@
+import 'detalhes_obrigado_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:intl/intl.dart';
@@ -23,6 +24,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
     decimalDigits: 2,
   );
 
+  int _paginaClientes = 0;
   DateTime? _dataInicial;
   DateTime? _dataFinal;
   List<Transacao> _transacoes = [];
@@ -37,7 +39,8 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
   Future<void> _carregarDados() async {
     final transacoes = await _transacaoDao.getAllTransacoes();
     final obrigados = await _obrigadoDao.getAllObrigados();
-    
+
+    if (!mounted) return;
     setState(() {
       _transacoes = transacoes;
       _obrigados = obrigados;
@@ -47,14 +50,17 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
   Future<void> _selecionarData(BuildContext context, bool isInicial) async {
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: isInicial ? _dataInicial ?? DateTime.now() : _dataFinal ?? DateTime.now(),
+      initialDate: isInicial
+          ? _dataInicial ?? DateTime.now()
+          : _dataFinal ?? DateTime.now(),
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
       locale: const Locale('pt', 'BR'),
     );
-    
-    if (picked != null) {
+
+    if (picked != null && mounted) {
       setState(() {
+        _paginaClientes = 0;
         if (isInicial) {
           _dataInicial = picked;
         } else {
@@ -67,9 +73,10 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
   List<Transacao> get _transacoesFiltradas {
     return _transacoes.where((transacao) {
       final dataTransacao = transacao.dataEmprestimo;
-      final dentroPeriodoInicial = _dataInicial == null || 
-          dataTransacao.isAfter(_dataInicial!.subtract(const Duration(days: 1)));
-      final dentroPeriodoFinal = _dataFinal == null || 
+      final dentroPeriodoInicial = _dataInicial == null ||
+          dataTransacao
+              .isAfter(_dataInicial!.subtract(const Duration(days: 1)));
+      final dentroPeriodoFinal = _dataFinal == null ||
           dataTransacao.isBefore(_dataFinal!.add(const Duration(days: 1)));
       return dentroPeriodoInicial && dentroPeriodoFinal;
     }).toList();
@@ -78,50 +85,53 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
   // 1. Maiores devedores
   List<Map<String, dynamic>> get _maioresDevedores {
     final Map<int, double> devedores = {};
-    
+
     for (final transacao in _transacoesFiltradas) {
-      if (transacao.dataPagamentoCompleto == null) {
+      if (transacao.dataPagamentoCompleto == null &&
+          transacao.dataPagamentoRetorno == null) {
         final valorDevido = transacao.retorno;
-        devedores[transacao.idObrigado] = 
+        devedores[transacao.idObrigado] =
             (devedores[transacao.idObrigado] ?? 0) + valorDevido;
       }
     }
-    
+
     return devedores.entries.map((entry) {
       final obrigado = _obrigados.firstWhere(
         (o) => o.id == entry.key,
         orElse: () => Obrigado(id: -1, nome: 'Desconhecido', zap: ''),
       );
-      
+
       return {
         'obrigado': obrigado,
         'valorDevido': entry.value,
       };
     }).toList()
-      ..sort((a, b) => (b['valorDevido'] as num).compareTo(a['valorDevido'] as num));
+      ..sort((a, b) =>
+          (b['valorDevido'] as num).compareTo(a['valorDevido'] as num));
   }
 
   // 2. Clientes fiéis (que mais pediram empréstimos)
   List<Map<String, dynamic>> get _clientesFieis {
     final Map<int, int> contagem = {};
-    
+
     for (final transacao in _transacoesFiltradas) {
-      contagem[transacao.idObrigado] = 
+      contagem[transacao.idObrigado] =
           (contagem[transacao.idObrigado] ?? 0) + 1;
     }
-    
+
     return contagem.entries.map((entry) {
       final obrigado = _obrigados.firstWhere(
         (o) => o.id == entry.key,
         orElse: () => Obrigado(id: -1, nome: 'Desconhecido', zap: ''),
       );
-      
+
       return {
         'obrigado': obrigado,
         'quantidade': entry.value,
       };
     }).toList()
-      ..sort((a, b) => (b['quantidade'] as num).compareTo(a['quantidade'] as num));
+      ..sort(
+          (a, b) => (b['quantidade'] as num).compareTo(a['quantidade'] as num));
   }
 
   // 3. Dados para gráfico de barras
@@ -130,20 +140,23 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
     double totalJurosReceber = 0;
     double totalJurosPago = 0;
     double totalQuitado = 0;
-    
+    final quitados = <int>{};
+
     for (final transacao in _transacoesFiltradas) {
       totalEmprestado += transacao.valorEmprestado;
-      
+
       if (transacao.dataPagamentoCompleto != null) {
-        totalQuitado += transacao.retorno;
-        totalJurosPago += transacao.retorno - transacao.valorEmprestado;
+        if (quitados.add(transacao.idTransacaoPai ?? -transacao.id!)) {
+          totalQuitado +=
+              transacao.valorEmprestado * (1 + transacao.percentualJuros / 100);
+        }
       } else if (transacao.dataPagamentoRetorno != null) {
-        totalJurosPago += transacao.retorno - transacao.valorEmprestado;
+        totalJurosPago += transacao.retorno;
       } else {
-        totalJurosReceber += transacao.retorno - transacao.valorEmprestado;
+        totalJurosReceber += transacao.retorno;
       }
     }
-    
+
     return {
       'Total Emprestado': totalEmprestado,
       'Juros a Receber': totalJurosReceber,
@@ -156,18 +169,18 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
   // 4. Dados para gráfico de previsão de arrecadação
   List<Map<String, dynamic>> get _previsaoArrecadacao {
     final Map<String, double> arrecadacaoPorMes = {};
-    
+
     for (final transacao in _transacoesFiltradas) {
-      if (transacao.dataPagamentoCompleto == null && 
+      if (transacao.dataPagamentoCompleto == null &&
           transacao.dataPagamentoRetorno == null) {
-        final mesAno = DateFormat('MM/yyyy').format(transacao.dataEmprestimo);
-        final juros = transacao.retorno - transacao.valorEmprestado;
-        
-        arrecadacaoPorMes[mesAno] = 
-            (arrecadacaoPorMes[mesAno] ?? 0) + juros;
+        final mesAno = DateFormat('MM/yyyy')
+            .format(transacao.dataVencimento ?? transacao.dataEmprestimo);
+        final juros = transacao.retorno;
+
+        arrecadacaoPorMes[mesAno] = (arrecadacaoPorMes[mesAno] ?? 0) + juros;
       }
     }
-    
+
     return arrecadacaoPorMes.entries.map((entry) {
       return {
         'mes': entry.key,
@@ -175,6 +188,21 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
       };
     }).toList()
       ..sort((a, b) => (a['mes'] as String).compareTo(b['mes'] as String));
+  }
+
+  Map<String, double> get _jurosPorMes {
+    final values = <String, double>{};
+    for (final t in _transacoesFiltradas) {
+      if (t.dataPagamentoRetorno != null) {
+        final key = DateFormat('yyyy-MM').format(t.dataPagamentoRetorno!);
+        values[key] = (values[key] ?? 0) + t.retorno;
+      }
+    }
+    final keys = values.keys.toList()..sort();
+    return {
+      for (final key in keys)
+        '${key.substring(5)}/${key.substring(0, 4)}': values[key]!
+    };
   }
 
   @override
@@ -199,7 +227,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                         border: OutlineInputBorder(),
                       ),
                       child: Text(
-                        _dataInicial != null 
+                        _dataInicial != null
                             ? DateFormat('dd/MM/yyyy').format(_dataInicial!)
                             : 'Selecionar',
                       ),
@@ -216,7 +244,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                         border: OutlineInputBorder(),
                       ),
                       child: Text(
-                        _dataFinal != null 
+                        _dataFinal != null
                             ? DateFormat('dd/MM/yyyy').format(_dataFinal!)
                             : 'Selecionar',
                       ),
@@ -226,7 +254,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
               ],
             ),
             const SizedBox(height: 20),
-            
+
             // 1. Maiores devedores
             Card(
               child: Padding(
@@ -248,6 +276,12 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                       Column(
                         children: _maioresDevedores.take(5).map((devedor) {
                           return ListTile(
+                            onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) => DetalhesObrigadoScreen(
+                                        obrigado:
+                                            devedor['obrigado'] as Obrigado))),
                             title: Text(devedor['obrigado'].nome),
                             trailing: Text(
                               _currencyFormat.format(devedor['valorDevido']),
@@ -259,12 +293,30 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                           );
                         }).toList(),
                       ),
+                    if (_clientesFieis.isNotEmpty)
+                      Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            IconButton(
+                                onPressed: _paginaClientes > 0
+                                    ? () => setState(() => _paginaClientes--)
+                                    : null,
+                                icon: const Icon(Icons.chevron_left)),
+                            Text(
+                                'Página ${_paginaClientes + 1} de ${(_clientesFieis.length / 5).ceil()}'),
+                            IconButton(
+                                onPressed: (_paginaClientes + 1) * 5 <
+                                        _clientesFieis.length
+                                    ? () => setState(() => _paginaClientes++)
+                                    : null,
+                                icon: const Icon(Icons.chevron_right)),
+                          ]),
                   ],
                 ),
               ),
             ),
             const SizedBox(height: 20),
-            
+
             // 2. Clientes fiéis
             Card(
               child: Padding(
@@ -284,8 +336,17 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                       const Text('Nenhum cliente no período')
                     else
                       Column(
-                        children: _clientesFieis.take(5).map((cliente) {
+                        children: _clientesFieis
+                            .skip(_paginaClientes * 5)
+                            .take(5)
+                            .map((cliente) {
                           return ListTile(
+                            onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) => DetalhesObrigadoScreen(
+                                        obrigado:
+                                            cliente['obrigado'] as Obrigado))),
                             title: Text(cliente['obrigado'].nome),
                             trailing: Text(
                               '${cliente['quantidade']} empréstimos',
@@ -301,7 +362,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            
+
             // 3. Gráfico de barras
             Card(
               child: Padding(
@@ -339,7 +400,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            
+
             // 4. Gráfico de linha (previsão de arrecadação)
             Card(
               child: Padding(
@@ -348,7 +409,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Previsão de Arrecadação',
+                      'Previsão de Juros a Receber',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -375,6 +436,34 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 20),
+            Card(
+                child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Juros Pagos por Mês',
+                              style: TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold)),
+                          Text(
+                              'Total recebido: ${_currencyFormat.format(_jurosPorMes.values.fold<double>(0, (s, v) => s + v))}'),
+                          SizedBox(
+                              height: 300,
+                              child: SfCartesianChart(
+                                  primaryXAxis: const CategoryAxis(),
+                                  series: <CartesianSeries>[
+                                    ColumnSeries<MapEntry<String, double>,
+                                            String>(
+                                        dataSource:
+                                            _jurosPorMes.entries.toList(),
+                                        xValueMapper: (e, _) => e.key,
+                                        yValueMapper: (e, _) => e.value,
+                                        dataLabelSettings:
+                                            const DataLabelSettings(
+                                                isVisible: true)),
+                                  ])),
+                        ]))),
           ],
         ),
       ),

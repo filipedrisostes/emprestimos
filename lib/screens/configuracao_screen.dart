@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../configuracao_service.dart';
 
 class ConfiguracaoScreen extends StatefulWidget {
-  const ConfiguracaoScreen({Key? key}) : super(key: key);
+  const ConfiguracaoScreen({super.key});
 
   @override
   _ConfiguracaoScreenState createState() => _ConfiguracaoScreenState();
@@ -50,13 +50,23 @@ class _ConfiguracaoScreenState extends State<ConfiguracaoScreen> {
     final zap = await ConfiguracaoService.getZapPadrao();
     final diasVencimento = await ConfiguracaoService.getDiasVencimentoPadrao();
 
+    if (!mounted) return;
     setState(() {
       _jurosController.text =
-          juros.toStringAsFixed(2).replaceAll('.', ',') + '%';
+          '${juros.toStringAsFixed(2).replaceAll('.', ',')}%';
       _emailController.text = email;
       _zapController.text = zap;
       _diasVencimentoController.text = diasVencimento.toString();
     });
+  }
+
+  @override
+  void dispose() {
+    _jurosController.dispose();
+    _emailController.dispose();
+    _zapController.dispose();
+    _diasVencimentoController.dispose();
+    super.dispose();
   }
 
   @override
@@ -67,7 +77,8 @@ class _ConfiguracaoScreenState extends State<ConfiguracaoScreen> {
       ),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
-        child: Column(
+        child: SingleChildScrollView(
+            child: Column(
           children: [
             TextFormField(
               controller: _emailController,
@@ -115,7 +126,8 @@ class _ConfiguracaoScreenState extends State<ConfiguracaoScreen> {
                 labelText: 'Dias para Vencimento',
                 border: OutlineInputBorder(),
               ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: false),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: false),
             ),
             const SizedBox(height: 20),
             TextButton(
@@ -124,71 +136,25 @@ class _ConfiguracaoScreenState extends State<ConfiguracaoScreen> {
                     _extrairValorNumerico(_jurosController.text); // Correto
                 final email = _emailController.text;
                 final zap = _zapController.text;
-                final diasVenc = int.tryParse(_diasVencimentoController.text) ?? 0;
+                final diasVenc =
+                    int.tryParse(_diasVencimentoController.text) ?? 0;
 
                 await ConfiguracaoService.setJurosPadrao(juros);
                 await ConfiguracaoService.setEmailPadrao(email);
                 await ConfiguracaoService.setZapPadrao(zap);
-                await ConfiguracaoService.setDiasVencimentoPadrao(diasVenc.toString());
+                await ConfiguracaoService.setDiasVencimentoPadrao(diasVenc);
 
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Configurações salvas com sucesso!')),
+                  const SnackBar(
+                      content: Text('Configurações salvas com sucesso!')),
                 );
               },
               child: const Text('Salvar'),
             ),
           ],
-        ),
+        )),
       ),
     );
-  }
-}
-
-class ConfiguracaoService {
-  static const _jurosPadraoKey = 'juros_padrao';
-  static const _emailPadraoKey = 'email_padrao';
-  static const _zapPadraoKey = 'zap_padrao';
-  static const _diasVencimentoPadraoKey = 'dias_vencimento_padrao';
-
-  static Future<double> getJurosPadrao() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getDouble(_jurosPadraoKey) ?? 30.0;
-  }
-
-  static Future<void> setJurosPadrao(double valor) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_jurosPadraoKey, valor);
-  }
-
-  static Future<String> getEmailPadrao() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_emailPadraoKey) ?? "Sem email definido";
-  }
-
-  static Future<void> setEmailPadrao(String email) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_emailPadraoKey, email);
-  }
-
-  static Future<String> getZapPadrao() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_zapPadraoKey) ?? "Sem celular definido";
-  }
-
-  static Future<void> setZapPadrao(String zap) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_zapPadraoKey, zap);
-  }
-
-  static Future<int> getDiasVencimentoPadrao() async {
-    final prefs = await SharedPreferences.getInstance();
-    final valor = prefs.getString(_diasVencimentoPadraoKey);
-    return int.tryParse(valor ?? '') ?? 0;
-  }
-
-  static Future<void> setDiasVencimentoPadrao(String dias) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_diasVencimentoPadraoKey, dias);
   }
 }

@@ -1,5 +1,7 @@
 class Transacao {
   final int? id;
+  final int? idTransacaoPai;
+  final int parcela;
   final int idObrigado;
   final DateTime dataEmprestimo;
   final DateTime? dataVencimento; // ✅ Novo campo opcional para vencimento
@@ -11,6 +13,8 @@ class Transacao {
 
   Transacao({
     this.id,
+    this.idTransacaoPai,
+    this.parcela = 1,
     required this.idObrigado,
     required this.dataEmprestimo,
     this.dataVencimento,
@@ -23,6 +27,8 @@ class Transacao {
 
   Map<String, dynamic> toMap() {
     final map = {
+      'id_transacao_pai': idTransacaoPai,
+      'parcela': parcela,
       'id_obrigado': idObrigado,
       'data_emprestimo': dataEmprestimo.toIso8601String(),
       'valor_empresado': valorEmprestado,
@@ -40,11 +46,11 @@ class Transacao {
     return map;
   }
 
-
-
   factory Transacao.fromMap(Map<String, dynamic> map) {
     return Transacao(
       id: map['id'],
+      idTransacaoPai: map['id_transacao_pai'] as int?,
+      parcela: (map['parcela'] as int?) ?? 1,
       idObrigado: map['id_obrigado'] != null ? map['id_obrigado'] as int : 0,
       dataEmprestimo: DateTime.parse(map['data_emprestimo']),
       dataVencimento: map['data_vencimento'] != null
@@ -66,6 +72,8 @@ class Transacao {
   Map<String, dynamic> toJson() {
     return {
       if (id != null) 'id': id,
+      'id_transacao_pai': idTransacaoPai,
+      'parcela': parcela,
       'id_obrigado': idObrigado,
       'data_emprestimo': dataEmprestimo.toIso8601String(),
       'valor_empresado': valorEmprestado,

@@ -1,7 +1,9 @@
+import '../models/transacao_pai.dart';
+import '../dao/transacao_pai_dao.dart';
+import '../services/notificacao_service.dart';
 import 'package:emprestimos/configuracao_service.dart';
 import 'package:emprestimos/currency_input_formatter.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:emprestimos/dao/obrigado_dao.dart';
 import 'package:emprestimos/dao/transacao_dao.dart';
@@ -16,13 +18,16 @@ class CadastroTransacaoScreen extends StatefulWidget {
   const CadastroTransacaoScreen({super.key, this.transacao});
 
   @override
-  _CadastroTransacaoScreenState createState() => _CadastroTransacaoScreenState();
+  _CadastroTransacaoScreenState createState() =>
+      _CadastroTransacaoScreenState();
 }
 
 class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
   final _formKey = GlobalKey<FormState>();
   final _valorController = TextEditingController();
   final _jurosController = TextEditingController();
+  final _parcelasController = TextEditingController(text: '1');
+  bool _saving = false;
   final _retornoController = TextEditingController();
   final _dbHelper = DatabaseHelper.instance;
   late TransacaoDao _transacaoDao;
@@ -30,18 +35,12 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
   DateTime? _dataVencimento; // ✅ Nova variável para vencimento
   int _diasVencimentoPadrao = 30; // ✅ Dias de vencimento padrão
 
-  
   List<Obrigado> _obrigados = [];
   Obrigado? _selectedObrigado;
   DateTime _dataEmprestimo = DateTime.now();
   bool _isEditing = false;
 
   // Máscaras para os campos
-  final _valorMask = MaskTextInputFormatter(
-    mask: 'R\$ #.###,##',
-    filter: {"#": RegExp(r'[0-9]')},
-  );
-
   final _jurosMask = MaskTextInputFormatter(
     mask: '##,##%',
     filter: {"#": RegExp(r'[0-9]')},
@@ -54,7 +53,7 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
     _transacaoDao = TransacaoDao(_dbHelper);
     _obrigadoDao = ObrigadoDao(_dbHelper);
     _carregarObrigados();
-    _carregarJurosPadrao();
+    if (widget.transacao == null) _carregarJurosPadrao();
 
     // Se estiver editando, preenche os campos
     if (widget.transacao != null) {
@@ -64,16 +63,19 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
       _jurosController.text = '0,00%';
     }
   }
-  
+
   Future<void> _carregarDiasVencimentoPadrao() async {
     _diasVencimentoPadrao = await ConfiguracaoService.getDiasVencimentoPadrao();
+    if (!mounted || widget.transacao != null) return;
     setState(() {
-      _dataVencimento = _dataEmprestimo.add(Duration(days: _diasVencimentoPadrao));
+      _dataVencimento =
+          _dataEmprestimo.add(Duration(days: _diasVencimentoPadrao));
     });
   }
 
   Future<void> _carregarObrigados() async {
     final lista = await _obrigadoDao.getAllObrigados();
+    if (!mounted) return;
     setState(() {
       _obrigados = lista;
     });
@@ -89,8 +91,11 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
   void _preencherCamposEdicao() {
     final transacao = widget.transacao!;
     _dataEmprestimo = transacao.dataEmprestimo;
+    _dataVencimento = transacao.dataVencimento;
+    _carregarPai();
     _valorController.text = _formatarMoeda(transacao.valorEmprestado);
-    _jurosController.text = '${transacao.percentualJuros.toStringAsFixed(2)}%';
+    _jurosController.text =
+        '${transacao.percentualJuros.toStringAsFixed(2).replaceAll('.', ',')}%';
     _calcularRetorno();
   }
 
@@ -101,12 +106,12 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
       decimalDigits: 2,
     ).format(valor);
   }
-  
+
   void _calcularRetorno() {
     try {
       final valor = _extrairValorNumerico(_valorController.text);
       double juros = _extrairValorNumerico(_jurosController.text);
-      juros = juros / 100; 
+      juros = juros / 100;
       final retorno = valor * juros;
       _retornoController.text = _formatarMoeda(retorno);
     } catch (e) {
@@ -140,43 +145,64 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
     }
   }
 
+  Future<void> _carregarPai() async {
+    final id = widget.transacao?.idTransacaoPai;
+    if (id == null) return;
+    final pai = await TransacaoPaiDao(_dbHelper).getById(id);
+    if (mounted && pai != null)
+      setState(() => _parcelasController.text = '${pai.qtdeParcelas}');
+  }
+
   Future<void> _salvarTransacao() async {
-    if (_formKey.currentState!.validate() && _selectedObrigado != null) {
-      final transacao = Transacao(
-        id: _isEditing ? widget.transacao!.id : null,
-        idObrigado: _selectedObrigado!.id!,
-        dataEmprestimo: _dataEmprestimo,
-        dataVencimento: _dataVencimento,
-        valorEmprestado: _extrairValorNumerico(_valorController.text),
-        percentualJuros: _extrairValorNumerico(_jurosController.text),
-        retorno: _extrairValorNumerico(_retornoController.text),
-        dataPagamentoRetorno: _isEditing ? widget.transacao!.dataPagamentoRetorno : null,
-        dataPagamentoCompleto: _isEditing ? widget.transacao!.dataPagamentoCompleto : null,
-      );
-
-
+    if (_saving ||
+        !_formKey.currentState!.validate() ||
+        _selectedObrigado == null) return;
+    setState(() => _saving = true);
+    try {
+      final pai = TransacaoPai(
+          id: widget.transacao?.idTransacaoPai,
+          idObrigado: _selectedObrigado!.id!,
+          dataEmprestimo: _dataEmprestimo,
+          valorEmprestado: _extrairValorNumerico(_valorController.text),
+          percentualJuros: _extrairValorNumerico(_jurosController.text),
+          qtdeParcelas: int.parse(_parcelasController.text));
       if (_isEditing) {
-        await _transacaoDao.updateTransacao(transacao);
+        final old = widget.transacao!;
+        final t = Transacao(
+            id: old.id,
+            idTransacaoPai: old.idTransacaoPai,
+            parcela: old.parcela,
+            idObrigado: pai.idObrigado,
+            dataEmprestimo: pai.dataEmprestimo,
+            dataVencimento: _dataVencimento,
+            valorEmprestado: pai.valorEmprestado,
+            percentualJuros: pai.percentualJuros,
+            retorno: _extrairValorNumerico(_retornoController.text),
+            dataPagamentoRetorno: old.dataPagamentoRetorno,
+            dataPagamentoCompleto: old.dataPagamentoCompleto);
+        await _transacaoDao.atualizarEmprestimo(pai, t);
       } else {
-        await _transacaoDao.insertTransacao(transacao);
+        await _transacaoDao.criarEmprestimo(pai, _dataVencimento!);
       }
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_isEditing 
-          ? 'Transação atualizada com sucesso!' 
-          : 'Transação cadastrada com sucesso!')),
-      );
-      
+      await NotificacaoService.instance.atualizar(requestPermission: true);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(_isEditing
+              ? 'Transação atualizada com sucesso!'
+              : 'Transação cadastrada com sucesso!')));
       Navigator.pop(context, true);
-    } else if (_selectedObrigado == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecione um obrigado!')),
-      );
+    } catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Erro ao salvar: $e')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
   @override
   void dispose() {
+    _parcelasController.dispose();
     _valorController.dispose();
     _jurosController.dispose();
     _retornoController.dispose();
@@ -198,15 +224,24 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
               children: [
                 // Dropdown com search para obrigados
                 Autocomplete<Obrigado>(
+                  initialValue: TextEditingValue(
+                      text: _selectedObrigado == null
+                          ? ""
+                          : "${_selectedObrigado!.nome} (${_selectedObrigado!.zap})"),
                   optionsBuilder: (TextEditingValue textEditingValue) {
                     if (textEditingValue.text.isEmpty) {
                       return _obrigados;
                     }
                     return _obrigados.where((obrigado) =>
-                      obrigado.nome.toLowerCase().contains(textEditingValue.text.toLowerCase()) ||
-                      obrigado.zap.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+                        obrigado.nome
+                            .toLowerCase()
+                            .contains(textEditingValue.text.toLowerCase()) ||
+                        obrigado.zap
+                            .toLowerCase()
+                            .contains(textEditingValue.text.toLowerCase()));
                   },
-                  displayStringForOption: (Obrigado option) => '${option.nome} (${option.zap})',
+                  displayStringForOption: (Obrigado option) =>
+                      '${option.nome} (${option.zap})',
                   onSelected: (Obrigado selection) {
                     setState(() {
                       _selectedObrigado = selection;
@@ -334,6 +369,17 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
                   },
                 ),
                 const SizedBox(height: 20),
+                TextFormField(
+                  controller: _parcelasController,
+                  decoration: const InputDecoration(
+                      labelText: 'Quantidade de Parcelas',
+                      border: OutlineInputBorder()),
+                  keyboardType: TextInputType.number,
+                  validator: (value) => (int.tryParse(value ?? '') ?? 0) < 1
+                      ? 'Quantidade de parcelas deve ser maior que zero'
+                      : null,
+                ),
+                const SizedBox(height: 20),
                 // Percentual de juros com máscara
                 TextFormField(
                   controller: _jurosController,
@@ -371,8 +417,10 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _salvarTransacao,
-                    child: Text(_isEditing ? 'Atualizar Transação' : 'Salvar Transação'),
+                    onPressed: _saving ? null : _salvarTransacao,
+                    child: Text(_isEditing
+                        ? 'Atualizar Transação'
+                        : 'Salvar Transação'),
                   ),
                 ),
               ],
@@ -385,9 +433,10 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
 
   Future<void> _carregarJurosPadrao() async {
     final jurosPadrao = await ConfiguracaoService.getJurosPadrao();
+    if (!mounted) return;
     // Converte para string formatada e adiciona o símbolo de porcentagem
-    _jurosController.text = '${jurosPadrao.toStringAsFixed(2).replaceAll('.', ',')}%';
+    _jurosController.text =
+        '${jurosPadrao.toStringAsFixed(2).replaceAll('.', ',')}%';
     _calcularRetorno();
   }
- 
 }

@@ -2,7 +2,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ConfiguracaoService {
   static const _jurosPadraoKey = 'juros_padrao';
-  static const _diasVencimentoPadraoKey = 'dias_vencimento_padrao'; // ✅ Novo campo para dias vencimento
+  static const _diasVencimentoPadraoKey =
+      'dias_vencimento_padrao'; // ✅ Novo campo para dias vencimento
   static const _emailPadraoKey = 'email_padrao';
 
   // Retorna o valor padrão de juros salvo
@@ -40,5 +41,12 @@ class ConfiguracaoService {
   static Future<void> setEmailPadrao(String email) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_emailPadraoKey, email);
+  }
+
+  static Future<String> getZapPadrao() async =>
+      (await SharedPreferences.getInstance()).getString('zap_padrao') ??
+      'Sem celular definido';
+  static Future<void> setZapPadrao(String zap) async {
+    await (await SharedPreferences.getInstance()).setString('zap_padrao', zap);
   }
 }
