@@ -59,7 +59,13 @@ class BackupService {
       } finally {
         await check.close();
       }
-      final probe = DatabaseHelper.forPath(candidate);
+      // Old backups have no configuration row: retain the current settings.
+      // New backups retain their own row without consulting device preferences.
+      final currentConfiguration = (await (await helper.database)
+              .query('configuracoes', where: 'id = 1'))
+          .single;
+      final probe = DatabaseHelper.forPath(candidate,
+          legacyConfigurationLoader: () async => currentConfiguration);
       try {
         final db = await probe.database;
         // Even files already at this version must have a valid schema.
@@ -80,7 +86,13 @@ class BackupService {
       await File(target).rename(safety);
       await File(candidate).rename(target);
       replaced = true;
-      await helper.database;
+      final restored = await helper.database;
+      await restored.insert('historico_alteracoes', {
+        'data': DateTime.now().toUtc().toIso8601String(),
+        'entidade': 'backup',
+        'acao': 'Restaurado',
+        'depois': '{"operacao":"Restauração de backup"}'
+      });
     } catch (_) {
       await helper.close();
       if (safety != null && await File(safety).exists()) {

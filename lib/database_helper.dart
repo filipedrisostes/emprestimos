@@ -1,17 +1,64 @@
 import 'dart:async';
+import 'services/audit_service.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class DatabaseHelper {
-  static const schemaVersion = 6;
+  static const schemaVersion = 9;
   static final instance = DatabaseHelper._();
   final String? pathOverride;
   Database? _database;
   Future<Database>? _opening;
-  DatabaseHelper._() : pathOverride = null;
-  DatabaseHelper.forPath(this.pathOverride);
+  final Future<Map<String, Object?>> Function()? legacyConfigurationLoader;
+  DatabaseHelper._()
+      : pathOverride = null,
+        legacyConfigurationLoader = null;
+  DatabaseHelper.forPath(this.pathOverride, {this.legacyConfigurationLoader});
+
+  static const configurationDefaults = <String, Object?>{
+    'id': 1,
+    'email_padrao': 'Sem email definido',
+    'juros_padrao': 30.0,
+    'zap_padrao': 'Sem celular definido',
+    'dias_vencimento_padrao': 30,
+  };
+
+  static Future<void> initializeConfiguration(
+      DatabaseExecutor db, Map<String, Object?> legacy) async {
+    final days = legacy['dias_vencimento_padrao'];
+    await db.insert(
+        'configuracoes',
+        {
+          ...configurationDefaults,
+          if (legacy['email_padrao'] is String)
+            'email_padrao': legacy['email_padrao'],
+          if (legacy['zap_padrao'] is String)
+            'zap_padrao': legacy['zap_padrao'],
+          if (legacy['juros_padrao'] is num)
+            'juros_padrao': legacy['juros_padrao'],
+          'dias_vencimento_padrao':
+              days is int ? days : int.tryParse('$days') ?? 30,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore);
+  }
+
+  Future<void> _initializeConfiguration(Database db) async {
+    if ((await db.query('configuracoes', where: 'id = 1')).isNotEmpty) return;
+    Map<String, Object?> legacy = {};
+    if (legacyConfigurationLoader != null) {
+      legacy = await legacyConfigurationLoader!();
+    } else if (pathOverride == null) {
+      final prefs = await SharedPreferences.getInstance();
+      legacy = {
+        for (final key in configurationDefaults.keys.where((k) => k != 'id'))
+          key: prefs.get(key)
+      };
+    }
+    await initializeConfiguration(db, legacy);
+  }
 
   Future<void> Function()? beforeChange;
   Future<void> Function(Database db)? afterChange;
@@ -34,7 +81,12 @@ class DatabaseHelper {
             (await db.rawQuery('SELECT total_changes()')).single.values.first;
         late T result;
         try {
-          result = await db.transaction(action);
+          result = await db.transaction((txn) async {
+            final before = await AuditService.snapshot(txn);
+            final result = await action(txn);
+            await AuditService.record(txn, before);
+            return result;
+          });
         } catch (_) {
           await unchanged?.call();
           rethrow;
@@ -85,6 +137,7 @@ class DatabaseHelper {
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
         onCreate: (db, _) => migrate(db),
         onUpgrade: (db, _, __) => migrate(db),
+        onOpen: _initializeConfiguration,
       );
       return _database!;
     } finally {
@@ -101,6 +154,16 @@ class DatabaseHelper {
   // Additive migration: accepts the old repository schema and both APK variants.
   // Existing IDs, values and payment dates are retained.
   static Future<void> migrate(DatabaseExecutor db) async {
+    await db.execute('''CREATE TABLE IF NOT EXISTS historico_alteracoes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL,
+      entidade TEXT NOT NULL, registro_id INTEGER, cliente_id INTEGER,
+      acao TEXT NOT NULL, antes TEXT, depois TEXT)''');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_historico_cliente ON historico_alteracoes(cliente_id, id)');
+    await db.execute('''CREATE TABLE IF NOT EXISTS configuracoes (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      email_padrao TEXT NOT NULL, juros_padrao REAL NOT NULL,
+      zap_padrao TEXT NOT NULL, dias_vencimento_padrao INTEGER NOT NULL)''');
     await db.execute('''CREATE TABLE IF NOT EXISTS obrigados (
       id INTEGER PRIMARY KEY, nome TEXT NOT NULL, zap TEXT NOT NULL,
       mensagem_personalizada TEXT)''');
@@ -133,6 +196,16 @@ class DatabaseHelper {
     }.entries) {
       await _add(db, 'transacoes', entry.key, entry.value);
     }
+    await _add(db, 'transacao_pai', 'origem_emprestimo_id', 'INTEGER');
+    await _add(db, 'transacao_pai', 'origem_historico', 'TEXT');
+    await _add(
+        db, 'transacoes', 'valor_pago_parcial', 'REAL NOT NULL DEFAULT 0');
+    await _add(db, 'transacoes', 'renegociado_em', 'TEXT');
+    await _add(db, 'transacoes', 'parcelamento', 'INTEGER NOT NULL DEFAULT 0');
+    await db.execute('''CREATE TABLE IF NOT EXISTS pagamentos_parciais (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, transacao_id INTEGER NOT NULL,
+      id_obrigado INTEGER NOT NULL, data TEXT NOT NULL,
+      valor REAL NOT NULL CHECK(valor > 0), tipo TEXT NOT NULL)''');
     final rows = await db.query('transacoes');
     for (final row in rows) {
       int? parentId = row['id_transacao_pai'] as int?;

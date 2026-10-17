@@ -1,3 +1,4 @@
+import 'editar_obrigado_screen.dart';
 import '../models/transacao_pai.dart';
 import '../dao/transacao_pai_dao.dart';
 import '../services/notificacao_service.dart';
@@ -28,6 +29,9 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
   final _jurosController = TextEditingController();
   final _parcelasController = TextEditingController(text: '1');
   bool _saving = false;
+  String _nomeDigitado = '';
+  final _clienteController = TextEditingController();
+  final _clienteFocus = FocusNode();
   final _retornoController = TextEditingController();
   final _dbHelper = DatabaseHelper.instance;
   late TransacaoDao _transacaoDao;
@@ -82,9 +86,10 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
 
     // Se estiver editando, seleciona o obrigado da transação
     if (_isEditing) {
-      _selectedObrigado = _obrigados.firstWhere(
-        (o) => o.id == widget.transacao!.idObrigado,
-      );
+      _selectedObrigado =
+          _obrigados.firstWhere((o) => o.id == widget.transacao!.idObrigado);
+      _nomeDigitado = _selectedObrigado!.nome;
+      _clienteController.text = _selectedObrigado!.nome;
     }
   }
 
@@ -154,14 +159,18 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
   }
 
   Future<void> _salvarTransacao() async {
-    if (_saving ||
-        !_formKey.currentState!.validate() ||
-        _selectedObrigado == null) return;
+    if (_saving || !_formKey.currentState!.validate()) return;
+    if (_dataVencimento == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Selecione o vencimento.')));
+      return;
+    }
     setState(() => _saving = true);
     try {
+      Obrigado? novoCliente;
       final pai = TransacaoPai(
           id: widget.transacao?.idTransacaoPai,
-          idObrigado: _selectedObrigado!.id!,
+          idObrigado: _selectedObrigado?.id ?? 0,
           dataEmprestimo: _dataEmprestimo,
           valorEmprestado: _extrairValorNumerico(_valorController.text),
           percentualJuros: _extrairValorNumerico(_jurosController.text),
@@ -182,14 +191,27 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
             dataPagamentoCompleto: old.dataPagamentoCompleto);
         await _transacaoDao.atualizarEmprestimo(pai, t);
       } else {
-        await _transacaoDao.criarEmprestimo(pai, _dataVencimento!);
+        final result = await _transacaoDao.criarComCliente(
+            pai, _dataVencimento!,
+            nome: _nomeDigitado, clienteId: _selectedObrigado?.id);
+        if (result.novo) novoCliente = result.cliente;
       }
-      await NotificacaoService.instance.atualizar(requestPermission: true);
+      // The loan is already committed: reminder failure must not invite a duplicate save.
+      try {
+        await NotificacaoService.instance.atualizar();
+      } catch (_) {}
+      if (!mounted) return;
+      if (novoCliente != null) {
+        await Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) => EditarObrigadoScreen(obrigado: novoCliente!)));
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(_isEditing
-              ? 'Transação atualizada com sucesso!'
-              : 'Transação cadastrada com sucesso!')));
+              ? 'Empréstimo atualizado com sucesso!'
+              : 'Empréstimo cadastrado com sucesso!')));
       Navigator.pop(context, true);
     } catch (e) {
       if (mounted)
@@ -202,6 +224,8 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
 
   @override
   void dispose() {
+    _clienteController.dispose();
+    _clienteFocus.dispose();
     _parcelasController.dispose();
     _valorController.dispose();
     _jurosController.dispose();
@@ -213,7 +237,7 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isEditing ? 'Editar Transação' : 'Cadastrar Transação'),
+        title: Text(_isEditing ? 'Editar Empréstimo' : 'Cadastrar Empréstimo'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -223,11 +247,9 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
             child: Column(
               children: [
                 // Dropdown com search para obrigados
-                Autocomplete<Obrigado>(
-                  initialValue: TextEditingValue(
-                      text: _selectedObrigado == null
-                          ? ""
-                          : "${_selectedObrigado!.nome} (${_selectedObrigado!.zap})"),
+                RawAutocomplete<Obrigado>(
+                  textEditingController: _clienteController,
+                  focusNode: _clienteFocus,
                   optionsBuilder: (TextEditingValue textEditingValue) {
                     if (textEditingValue.text.isEmpty) {
                       return _obrigados;
@@ -245,6 +267,7 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
                   onSelected: (Obrigado selection) {
                     setState(() {
                       _selectedObrigado = selection;
+                      _nomeDigitado = selection.nome;
                     });
                   },
                   fieldViewBuilder: (
@@ -257,14 +280,21 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
                       controller: fieldTextEditingController,
                       focusNode: fieldFocusNode,
                       decoration: const InputDecoration(
-                        labelText: 'Obrigado',
+                        labelText: 'Cliente',
+                        helperText:
+                            'Digite um nome novo ou selecione um cliente.',
                         border: OutlineInputBorder(),
                         suffixIcon: Icon(Icons.search),
                       ),
+                      onChanged: (value) {
+                        _nomeDigitado = value;
+                        _selectedObrigado = null;
+                      },
                       validator: (value) {
-                        if (_selectedObrigado == null) {
-                          return 'Selecione um obrigado';
-                        }
+                        if ((value ?? '').trim().isEmpty)
+                          return 'Informe o cliente';
+                        if (_isEditing && _selectedObrigado == null)
+                          return 'Selecione o cliente na lista';
                         return null;
                       },
                     );
@@ -419,8 +449,8 @@ class _CadastroTransacaoScreenState extends State<CadastroTransacaoScreen> {
                   child: ElevatedButton(
                     onPressed: _saving ? null : _salvarTransacao,
                     child: Text(_isEditing
-                        ? 'Atualizar Transação'
-                        : 'Salvar Transação'),
+                        ? 'Atualizar Empréstimo'
+                        : 'Salvar Empréstimo'),
                   ),
                 ),
               ],

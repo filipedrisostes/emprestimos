@@ -1,3 +1,5 @@
+import 'package:intl/intl.dart';
+import '../services/backup_status_service.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
@@ -52,6 +54,7 @@ class _BackupScreenState extends State<BackupScreen> {
     setState(() => _busy = true);
     try {
       final message = await work();
+      await _load();
       if (mounted && message != null)
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(message)));
@@ -112,8 +115,35 @@ class _BackupScreenState extends State<BackupScreen> {
   }
 
   Future<String?> _driveRestore() async {
-    if (!await _confirmRestore()) return null;
-    final ok = await GoogleDriveBackup().restoreBackup(_email);
+    final files = await GoogleDriveBackup().listBackups();
+    if (!mounted) return null;
+    if (files.isEmpty) return 'Nenhum backup encontrado no Drive.';
+    final id = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+                title: const Text('Escolher backup'),
+                content: SizedBox(
+                    width: double.maxFinite,
+                    height: 360,
+                    child: ListView(children: [
+                      for (final file in files)
+                        ListTile(
+                            title: Text(file.name == 'bkp_atual.db'
+                                ? 'Backup atual'
+                                : file.name ?? 'Backup'),
+                            subtitle: Text(file.modifiedTime == null
+                                ? ''
+                                : DateFormat('dd/MM/yyyy HH:mm')
+                                    .format(file.modifiedTime!.toLocal())),
+                            onTap: () => Navigator.pop(ctx, file.id))
+                    ])),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cancelar'))
+                ]));
+    if (id == null || !mounted || !await _confirmRestore()) return null;
+    final ok = await GoogleDriveBackup().restoreBackup(_email, fileId: id);
     if (ok) await NotificacaoService.instance.atualizar();
     return ok
         ? 'Backup restaurado com sucesso!'
@@ -131,6 +161,32 @@ class _BackupScreenState extends State<BackupScreen> {
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                    ListenableBuilder(
+                        listenable: BackupStatusService.instance,
+                        builder: (_, __) {
+                          final status = BackupStatusService.instance;
+                          return Card(
+                              child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text('Situação do backup',
+                                            style: TextStyle(
+                                                fontWeight: FontWeight.bold)),
+                                        Text(
+                                            'Envios pendentes: ${status.pending}'),
+                                        Text(status.lastUpload == null
+                                            ? 'Nenhum envio confirmado neste aparelho.'
+                                            : 'Último envio: ${DateFormat('dd/MM/yyyy HH:mm').format(status.lastUpload!.toLocal())}'),
+                                        if (status.file != null)
+                                          Text('Arquivo: ${status.file}'),
+                                        if (status.account != null)
+                                          Text(
+                                              'Conta do último envio: ${status.account}'),
+                                      ])));
+                        }),
                     Text('Email configurado: $_email',
                         textAlign: TextAlign.center),
                     const SizedBox(height: 10),

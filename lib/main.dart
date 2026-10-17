@@ -1,3 +1,6 @@
+import 'services/backup_status_service.dart';
+import 'services/app_lock_service.dart';
+import 'widgets/app_lock.dart';
 import 'package:emprestimos/database_helper.dart';
 import 'package:emprestimos/screens/home_screen.dart';
 
@@ -10,6 +13,8 @@ import 'services/notificacao_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await AppLockService.instance.initialize();
+  await BackupStatusService.instance.initialize();
   Intl.defaultLocale = 'pt_BR';
   await DatabaseHelper.instance.database; // força inicialização
   await AutomaticBackupService.start();
@@ -31,6 +36,8 @@ class MyApp extends StatelessWidget {
         theme: ThemeData(
           primarySwatch: Colors.blue,
         ),
+        builder: (context, child) =>
+            AppLock(child: child ?? const SizedBox.shrink()),
         home: const HomeScreen(),
         localizationsDelegates: const [
           GlobalMaterialLocalizations.delegate,

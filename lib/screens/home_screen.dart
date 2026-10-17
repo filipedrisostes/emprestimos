@@ -1,3 +1,7 @@
+import '../widgets/partial_payment_dialog.dart';
+import '../services/partial_payment_service.dart';
+import '../services/loan_origin.dart';
+import 'historico_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -28,6 +32,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<int, Obrigado> _clientes = {};
   Map<int, int> _parcelas = {};
   bool _loading = true;
+  bool _paying = false;
   String? _filter;
   String? _error;
   int _loadGeneration = 0;
@@ -69,10 +74,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  bool _open(Transacao t) =>
-      t.dataPagamentoCompleto == null && t.dataPagamentoRetorno == null;
+  bool _open(Transacao t) => t.emAberto;
   bool _matches(Transacao t) => switch (_filter) {
-        'Em Aberto' => _open(t),
+        'Em Aberto' => _open(t) && !t.parcial,
+        'Parcial' => t.parcial,
         'Pago Total' => t.dataPagamentoCompleto != null,
         'Pago Juros' => t.dataPagamentoRetorno != null,
         'Vencido' =>
@@ -106,14 +111,23 @@ class _HomeScreenState extends State<HomeScreen> {
     final title = action == 'juros'
         ? 'Confirmar Pagamento de Juros'
         : action == 'quitar'
-            ? 'Quitar Todas as Parcelas'
+            ? (t.parcelamento
+                ? 'Pagar Parcela do Acordo'
+                : 'Quitar Todas as Parcelas')
             : 'Excluir Transação';
     final text = action == 'juros'
         ? 'Confirmar o pagamento dos juros? Se sim, será lançada uma nova cobrança para o próximo mês'
         : action == 'quitar'
-            ? 'Isso marcará TODAS as parcelas futuras como pagas. Continuar?'
+            ? (t.parcelamento
+                ? 'Confirmar o pagamento do saldo desta parcela?'
+                : 'Isso marcará TODAS as parcelas futuras como pagas. Continuar?')
             : 'Tem certeza que deseja excluir esta transação?';
-    if (!await _confirm(title, text)) return;
+    if (_paying) return;
+    setState(() => _paying = true);
+    if (!await _confirm(title, text)) {
+      if (mounted) setState(() => _paying = false);
+      return;
+    }
     try {
       if (action == 'juros') {
         await _dao.pagarJuros(t.id!, DateTime.now());
@@ -136,15 +150,22 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted)
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Erro: $e')));
+    } finally {
+      if (mounted) setState(() => _paying = false);
     }
   }
 
   Future<void> _whatsapp(Transacao t, Obrigado c) async {
     final number =
         c.zap.replaceAll(RegExp(r'[^0-9]'), '').replaceFirst(RegExp(r'^0'), '');
+    if (number.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Adicione o WhatsApp em Clientes > Editar Cliente.')));
+      return;
+    }
     final message = (c.mensagemPersonalizada?.isNotEmpty ?? false)
         ? c.mensagemPersonalizada!.replaceAll('#', c.nome)
-        : 'Olá ${c.nome}, tudo bem? Lembrando que o valor de ${_money.format(t.retorno)} vence este mês.';
+        : 'Olá ${c.nome}, tudo bem? Lembrando que o valor de ${_money.format(t.saldo)} vence este mês.';
     try {
       if (!await launchUrl(Uri.https('wa.me', '/$number', {'text': message}),
           mode: LaunchMode.externalApplication)) {
@@ -161,7 +182,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final visible = _items.where(_matches).toList();
     final total =
-        _items.where(_open).fold<double>(0, (sum, t) => sum + t.retorno);
+        _items.where(_open).fold<double>(0, (sum, t) => sum + t.saldo);
     final label = DateFormat('MMMM/yyyy', 'pt_BR').format(_month);
     return Scaffold(
         appBar: AppBar(title: const Text('Empréstimos'), actions: [
@@ -170,7 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.refresh),
               onPressed: _load),
           IconButton(
-              tooltip: 'Cadastrar Transação',
+              tooltip: 'Cadastrar Empréstimo',
               icon: const Icon(Icons.add),
               onPressed: () => _page(const CadastroTransacaoScreen())),
         ]),
@@ -181,11 +202,12 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Text('Menu',
                   style: TextStyle(color: Colors.white, fontSize: 24))),
           for (final entry in <(IconData, String, Widget)>[
+            (Icons.history, 'Histórico de alterações', const HistoricoScreen()),
             (Icons.settings, 'Configurações', const ConfiguracaoScreen()),
             (Icons.person_add, 'Clientes', const ListaObrigadosScreen()),
             (
               Icons.monetization_on,
-              'Cadastrar Transação',
+              'Cadastrar Empréstimo',
               const CadastroTransacaoScreen()
             ),
             (Icons.bar_chart, 'Estatísticas', const EstatisticasScreen()),
@@ -225,6 +247,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Wrap(spacing: 10, children: [
                     for (final filter in [
                       'Em Aberto',
+                      'Parcial',
                       'Pago Total',
                       'Pago Juros',
                       'Vencido'
@@ -232,8 +255,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       OutlinedButton(
                           style: OutlinedButton.styleFrom(
                               foregroundColor: Colors.black,
-                              backgroundColor:
-                                  _filter == filter ? Colors.blue[100] : null,
+                              backgroundColor: _filter == filter
+                                  ? (filter == 'Parcial'
+                                      ? Colors.orange[100]
+                                      : Colors.blue[100])
+                                  : null,
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 14),
                               textStyle: const TextStyle(fontSize: 9)),
@@ -263,71 +289,170 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('Total a receber:',
-                                style: TextStyle(
-                                    fontSize: 16, fontWeight: FontWeight.bold)),
-                            Text(_money.format(total),
-                                style: const TextStyle(
-                                    fontSize: 18, fontWeight: FontWeight.bold)),
+                            const Expanded(
+                                child: Text('Total a receber:',
+                                    style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold))),
+                            Flexible(
+                                child: Text(_money.format(total),
+                                    textAlign: TextAlign.end,
+                                    style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold))),
                           ]))),
             ])));
   }
 
+  Future<void> _partial(Transacao t) async {
+    if (_paying) return;
+    setState(() => _paying = true);
+    try {
+      final input = await showDialog<PartialPaymentInput>(
+          context: context,
+          builder: (_) => PartialPaymentDialog(transaction: t));
+      if (input == null) return;
+      await PartialPaymentService(DatabaseHelper.instance).pay(
+          t.id!, input.amount, DateTime.now(),
+          total: input.total,
+          installments: input.installments,
+          expectedPaid: t.valorPagoParcial);
+      await NotificacaoService.instance.atualizar();
+      if (!mounted) return;
+      await _load();
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Pagamento registrado com sucesso.')));
+    } catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Erro: $e')));
+    } finally {
+      if (mounted) setState(() => _paying = false);
+    }
+  }
+
+  Future<void> _origin(Transacao t) async {
+    try {
+      final rows = await (await DatabaseHelper.instance.database).query(
+          'transacao_pai',
+          where: 'id = ?',
+          whereArgs: [t.idTransacaoPai]);
+      final encoded = rows.single['origem_historico'] as String?;
+      if (!mounted || encoded == null) return;
+      await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+                  title: const Text('Origem do parcelamento'),
+                  content: SizedBox(
+                      width: double.maxFinite,
+                      child: ListView(
+                          shrinkWrap: true,
+                          children: loanOriginLines(encoded)
+                              .map((line) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: Text(line)))
+                              .toList())),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Fechar'))
+                  ]));
+    } catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erro ao consultar origem: $e')));
+    }
+  }
+
   Widget _card(Transacao t) {
     final c = _clientes[t.idObrigado] ??
-        Obrigado(id: t.idObrigado, nome: 'Obrigado não encontrado', zap: '');
-    final color = t.dataPagamentoCompleto != null
-        ? Colors.green[100]
-        : t.dataPagamentoRetorno != null
-            ? Colors.blue[100]
-            : (t.dataVencimento?.isBefore(DateTime.now()) ?? false)
-                ? Colors.red[100]
-                : null;
+        Obrigado(id: t.idObrigado, nome: 'Cliente não encontrado', zap: '');
+    final color = t.parcial
+        ? Colors.orange[100]
+        : t.dataPagamentoCompleto != null
+            ? Colors.green[100]
+            : t.dataPagamentoRetorno != null
+                ? Colors.blue[100]
+                : (t.dataVencimento?.isBefore(DateTime.now()) ?? false)
+                    ? Colors.red[100]
+                    : null;
     return Card(
         margin: const EdgeInsets.all(8),
         elevation: 2,
         color: color,
-        child: ListTile(
-            title: Text(c.nome),
-            subtitle:
+        child: Padding(
+            padding: const EdgeInsets.all(16),
+            child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(c.nome, style: Theme.of(context).textTheme.titleMedium),
+              Text('Situação: ${t.situacao}'),
               Text('Data: ${_date.format(t.dataEmprestimo)}'),
               Text(
                   'Parcela: ${t.parcela} de ${_parcelas[t.idTransacaoPai] ?? 1}'),
-              Text('Valor: ${_money.format(t.valorEmprestado)}'),
-              Text('Juros: ${t.percentualJuros}%'),
-              Text('Total: ${_money.format(t.retorno)}'),
+              Text(
+                  '${t.parcelamento ? 'Total do acordo' : 'Valor emprestado'}: ${_money.format(t.valorEmprestado)}'),
+              if (!t.parcelamento) Text('Juros: ${t.percentualJuros}%'),
+              Text(
+                  '${t.parcelamento ? 'Valor da parcela' : 'Juros da cobrança'}: ${_money.format(t.retorno)}'),
+              if (t.valorPagoParcial > 0)
+                Text(
+                    'Pagamentos parciais: ${_money.format(t.valorPagoParcial)}'),
+              if (_open(t)) Text('Saldo a receber: ${_money.format(t.saldo)}'),
+              if (t.renegociadoEm != null)
+                Text(
+                    'Saldo transferido para novo acordo em ${_date.format(t.renegociadoEm!)}'),
               if (t.dataVencimento != null)
                 Text('Prazo: ${_date.format(t.dataVencimento!)}'),
               if (t.dataPagamentoCompleto != null)
                 Text('Pago em: ${_date.format(t.dataPagamentoCompleto!)}'),
               if (t.dataPagamentoRetorno != null)
                 Text('Juros: ${_date.format(t.dataPagamentoRetorno!)}'),
-            ]),
-            trailing: Wrap(spacing: -20, children: [
-              if (_open(t)) ...[
-                IconButton(
-                    tooltip: 'Marcar como totalmente pago',
-                    icon: const Icon(Icons.attach_money, color: Colors.green),
-                    onPressed: () => _action(t, 'quitar')),
-                IconButton(
-                    tooltip: 'Pagar apenas juros',
-                    icon: const Icon(Icons.percent, color: Colors.blue),
-                    onPressed: () => _action(t, 'juros')),
-                IconButton(
-                    tooltip: 'Editar Transação',
-                    icon: const Icon(Icons.edit, color: Colors.orange),
-                    onPressed: () =>
-                        _page(CadastroTransacaoScreen(transacao: t))),
-                IconButton(
-                    tooltip: 'Excluir Transação',
-                    icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: () => _action(t, 'excluir')),
-              ],
-              IconButton(
-                  tooltip: 'WhatsApp',
-                  icon: const Icon(Icons.phone_android, color: Colors.green),
-                  onPressed: () => _whatsapp(t, c)),
+              Wrap(children: [
+                if (_open(t)) ...[
+                  IconButton(
+                      tooltip: t.parcelamento
+                          ? 'Pagar parcela do acordo'
+                          : 'Marcar como totalmente pago',
+                      icon: const Icon(Icons.attach_money, color: Colors.green),
+                      onPressed: _paying ? null : () => _action(t, 'quitar')),
+                  if (!t.parcelamento)
+                    IconButton(
+                        tooltip: 'Pagar apenas juros',
+                        icon: const Icon(Icons.percent, color: Colors.blue),
+                        onPressed: _paying ? null : () => _action(t, 'juros')),
+                  IconButton(
+                      tooltip: 'Pagamento parcial',
+                      icon: const Icon(Icons.payments_outlined,
+                          color: Colors.orange),
+                      onPressed: _paying ? null : () => _partial(t)),
+                  if (!t.parcial && !t.parcelamento) ...[
+                    IconButton(
+                        tooltip: 'Editar Empréstimo',
+                        icon: const Icon(Icons.edit, color: Colors.orange),
+                        onPressed: _paying
+                            ? null
+                            : () =>
+                                _page(CadastroTransacaoScreen(transacao: t))),
+                    IconButton(
+                        tooltip: 'Excluir Transação',
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        onPressed:
+                            _paying ? null : () => _action(t, 'excluir')),
+                  ],
+                ],
+                if (t.parcelamento)
+                  IconButton(
+                      tooltip: 'Origem do parcelamento',
+                      icon: const Icon(Icons.history),
+                      onPressed: () => _origin(t)),
+                if (t.renegociadoEm == null)
+                  IconButton(
+                      tooltip: 'WhatsApp',
+                      icon:
+                          const Icon(Icons.phone_android, color: Colors.green),
+                      onPressed: () => _whatsapp(t, c)),
+              ]),
             ])));
   }
 }

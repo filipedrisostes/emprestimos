@@ -1,3 +1,4 @@
+import 'backup_status_service.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -71,6 +72,8 @@ class AutomaticBackupService with WidgetsBindingObserver {
     final temp = File('${_manifest.path}.tmp');
     await temp.writeAsString(jsonEncode(_state), flush: true);
     await temp.rename(_manifest.path);
+    BackupStatusService.instance.updatePending(
+        _archives.length + (_state['pendingCurrent'] == true ? 1 : 0));
   }
 
   Future<void> initialize() async {
@@ -96,6 +99,7 @@ class AutomaticBackupService with WidgetsBindingObserver {
         await capture(await helper.database, send: false);
       }
     });
+    BackupStatusService.instance.updatePending((await pending()).length);
     report(
         'Backup atual e histórico diário ativos. Pendentes: ${(await pending()).length}.');
   }
@@ -176,6 +180,7 @@ class AutomaticBackupService with WidgetsBindingObserver {
       report('Dados salvos. Atualização do backup aguardando envio.');
       if (send) unawaited(sendPending());
     } catch (e) {
+      BackupStatusService.instance.updatePending((await pending()).length + 1);
       debugPrint('Erro ao criar snapshot automático: $e');
       report(
           'Dados salvos, mas a cópia está pendente. Verifique o espaço livre.');

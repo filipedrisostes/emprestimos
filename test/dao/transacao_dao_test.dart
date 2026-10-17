@@ -28,7 +28,7 @@ void main() {
         .copy(await helper.databasePath);
     final db = await helper.database;
     final rows = await TransacaoDao(helper).getAllTransacoes();
-    expect(await db.getVersion(), 6);
+    expect(await db.getVersion(), DatabaseHelper.schemaVersion);
     expect(rows.length, 3);
     expect(rows.map((t) => t.parcela), [1, 2, 3]);
     expect(rows.map((t) => t.retorno), [300, 300, 300]);

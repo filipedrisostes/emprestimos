@@ -1,3 +1,6 @@
+import '../services/loan_origin.dart';
+import 'extrato_cliente_screen.dart';
+import 'historico_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../database_helper.dart';
@@ -29,7 +32,27 @@ class _DetalhesObrigadoScreenState extends State<DetalhesObrigadoScreen> {
           ])));
   @override
   Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: Text(widget.obrigado.nome), centerTitle: true),
+      appBar: AppBar(
+          title: Text(widget.obrigado.nome),
+          centerTitle: true,
+          actions: [
+            IconButton(
+                tooltip: 'Extrato',
+                icon: const Icon(Icons.receipt_long),
+                onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            ExtratoClienteScreen(cliente: widget.obrigado)))),
+            IconButton(
+                tooltip: 'Histórico',
+                icon: const Icon(Icons.history),
+                onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            HistoricoScreen(clienteId: widget.obrigado.id)))),
+          ]),
       body: FutureBuilder<List<EmprestimoDetalhado>>(
           future: _future,
           builder: (_, s) {
@@ -37,8 +60,9 @@ class _DetalhesObrigadoScreenState extends State<DetalhesObrigadoScreen> {
             if (!s.hasData)
               return const Center(child: CircularProgressIndicator());
             final items = s.data!;
-            final total = items.fold<double>(
-                0, (v, e) => v + e.emprestimo.valorEmprestado);
+            final total = items
+                .where((e) => !e.emprestimo.parcelamento)
+                .fold<double>(0, (v, e) => v + e.emprestimo.valorEmprestado);
             final juros = items.fold<double>(0, (v, e) => v + e.jurosPagos);
             final pago = items.where((e) => e.pago).fold<double>(
                 0,
@@ -75,8 +99,12 @@ class _DetalhesObrigadoScreenState extends State<DetalhesObrigadoScreen> {
                         subtitle: Text(
                             'Valor: ${_money.format(e.emprestimo.valorEmprestado)}'),
                         trailing: Chip(
-                            label: Text(e.pago ? 'Pago' : 'Em Aberto'),
-                            backgroundColor: e.pago ? Colors.green[50] : null),
+                            label: Text(e.situacao),
+                            backgroundColor: e.parcial
+                                ? Colors.orange[100]
+                                : e.pago
+                                    ? Colors.green[50]
+                                    : null),
                         children: [
                       Padding(
                           padding: const EdgeInsets.all(16),
@@ -88,8 +116,16 @@ class _DetalhesObrigadoScreenState extends State<DetalhesObrigadoScreen> {
                                 Text(
                                     'Valor: ${_money.format(e.emprestimo.valorEmprestado)}'),
                                 Text('Juros: ${e.emprestimo.percentualJuros}%'),
-                                Text(
-                                    'Status: ${e.pago ? 'Pago' : 'Em Aberto'}'),
+                                Text('Status: ${e.situacao}'),
+                                if (e.emprestimo.origemHistorico != null)
+                                  ExpansionTile(
+                                      title:
+                                          const Text('Origem do parcelamento'),
+                                      children: [
+                                        for (final line in loanOriginLines(
+                                            e.emprestimo.origemHistorico!))
+                                          ListTile(title: Text(line))
+                                      ]),
                                 const Padding(
                                     padding: EdgeInsets.symmetric(vertical: 12),
                                     child: Text('Parcelas',
@@ -102,6 +138,9 @@ class _DetalhesObrigadoScreenState extends State<DetalhesObrigadoScreen> {
                                         if (t.dataVencimento != null)
                                           'Vencimento: ${_date.format(t.dataVencimento!)}',
                                         'Valor: ${_money.format(t.retorno)}',
+                                        'Situação: ${t.situacao}',
+                                        'Pagamentos parciais: ${_money.format(t.valorPagoParcial)}',
+                                        'Saldo a receber: ${_money.format(t.saldo)}',
                                         if (t.dataPagamentoCompleto != null)
                                           'Pago em: ${_date.format(t.dataPagamentoCompleto!)}',
                                         if (t.dataPagamentoRetorno != null)

@@ -1,3 +1,4 @@
+import '../services/app_lock_service.dart';
 import 'package:flutter/material.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../configuracao_service.dart';
@@ -81,6 +82,28 @@ class _ConfiguracaoScreenState extends State<ConfiguracaoScreen> {
         child: SingleChildScrollView(
             child: Column(
           children: [
+            ListenableBuilder(
+                listenable: AppLockService.instance,
+                builder: (context, _) => SwitchListTile(
+                    title: const Text('Bloqueio por biometria'),
+                    subtitle: const Text(
+                        'Protege este aparelho. O código do aparelho pode ser usado como alternativa.'),
+                    value: AppLockService.instance.enabled,
+                    onChanged: AppLockService.instance.authenticating
+                        ? null
+                        : (value) async {
+                            try {
+                              await AppLockService.instance.setEnabled(value);
+                            } catch (e) {
+                              if (context.mounted)
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('$e')));
+                            }
+                            final error = AppLockService.instance.error;
+                            if (error != null && context.mounted)
+                              ScaffoldMessenger.of(context)
+                                  .showSnackBar(SnackBar(content: Text(error)));
+                          })),
             TextFormField(
               controller: _emailController,
               decoration: const InputDecoration(
@@ -140,10 +163,12 @@ class _ConfiguracaoScreenState extends State<ConfiguracaoScreen> {
                 final diasVenc =
                     int.tryParse(_diasVencimentoController.text) ?? 0;
 
-                await ConfiguracaoService.setJurosPadrao(juros);
-                await ConfiguracaoService.setEmailPadrao(email);
-                await ConfiguracaoService.setZapPadrao(zap);
-                await ConfiguracaoService.setDiasVencimentoPadrao(diasVenc);
+                await ConfiguracaoService.salvar(
+                    juros: juros,
+                    email: email,
+                    celular: zap,
+                    diasVencimento: diasVenc);
+                if (!context.mounted) return;
 
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(

@@ -1,3 +1,4 @@
+import 'backup_status_service.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'drive_backup_store.dart';
@@ -71,6 +72,9 @@ class GoogleDriveBackup {
           }
           await _store(client).then(
               (store) => store.put(file, metadata['remoteName'] as String));
+          await BackupStatusService.instance.uploaded(
+              metadata['remoteName'] as String,
+              _googleSignIn.currentUser!.email);
         } finally {
           client.close();
         }
@@ -88,35 +92,71 @@ class GoogleDriveBackup {
         final client = await _client();
         try {
           await (await _store(client)).put(file, 'bkp_atual.db');
+          await BackupStatusService.instance
+              .uploaded('bkp_atual.db', _googleSignIn.currentUser!.email);
         } finally {
           client.close();
         }
       });
 
-  Future<bool> restoreBackup(String email) async {
+  Future<List<drive.File>> listBackups() async {
+    final client = await _client();
+    try {
+      final api = drive.DriveApi(client);
+      final files = <drive.File>[];
+      String? token;
+      do {
+        final page = await api.files.list(
+            q: "name contains 'bkp_' and trashed = false",
+            spaces: 'drive',
+            orderBy: 'modifiedTime desc',
+            pageSize: 100,
+            pageToken: token,
+            $fields: 'nextPageToken,files(id,name,modifiedTime,size)');
+        files.addAll(
+            (page.files ?? []).where((f) => f.name?.endsWith('.db') ?? false));
+        token = page.nextPageToken;
+      } while (token != null);
+      files.sort((a, b) {
+        if (a.name == 'bkp_atual.db' && b.name != a.name) return -1;
+        if (b.name == 'bkp_atual.db' && a.name != b.name) return 1;
+        return (b.modifiedTime ?? DateTime(1970))
+            .compareTo(a.modifiedTime ?? DateTime(1970));
+      });
+      return files;
+    } finally {
+      client.close();
+    }
+  }
+
+  Future<bool> restoreBackup(String email, {String? fileId}) async {
     final client = await _client();
     File? temp;
     try {
       final api = drive.DriveApi(client);
-      // Prefer the live backup even when a daily archive was uploaded later.
-      var files = (await api.files.list(
-              q: "name = 'bkp_atual.db' and trashed = false",
-              spaces: 'drive',
-              orderBy: 'modifiedTime desc',
-              pageSize: 1,
-              $fields: 'files(id,name)'))
-          .files;
-      if (files == null || files.isEmpty) {
-        files = (await api.files.list(
-                q: "name contains 'bkp_' and trashed = false",
+      String? selectedId = fileId;
+      if (selectedId == null) {
+        // Prefer the live backup even when a daily archive was uploaded later.
+        var files = (await api.files.list(
+                q: "name = 'bkp_atual.db' and trashed = false",
                 spaces: 'drive',
                 orderBy: 'modifiedTime desc',
                 pageSize: 1,
                 $fields: 'files(id,name)'))
             .files;
+        if (files == null || files.isEmpty) {
+          files = (await api.files.list(
+                  q: "name contains 'bkp_' and trashed = false",
+                  spaces: 'drive',
+                  orderBy: 'modifiedTime desc',
+                  pageSize: 1,
+                  $fields: 'files(id,name)'))
+              .files;
+        }
+        if (files == null || files.isEmpty) return false;
+        selectedId = files.first.id;
       }
-      if (files == null || files.isEmpty) return false;
-      final media = await api.files.get(files.first.id!,
+      final media = await api.files.get(selectedId!,
           downloadOptions: drive.DownloadOptions.fullMedia) as drive.Media;
       temp = File(
           '${(await getTemporaryDirectory()).path}/drive_restore_${DateTime.now().microsecondsSinceEpoch}.db');

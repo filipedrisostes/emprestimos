@@ -28,6 +28,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
   DateTime? _dataInicial;
   DateTime? _dataFinal;
   List<Transacao> _transacoes = [];
+  List<Map<String, Object?>> _pagamentos = [];
   List<Obrigado> _obrigados = [];
 
   @override
@@ -40,8 +41,11 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
     final transacoes = await _transacaoDao.getAllTransacoes();
     final obrigados = await _obrigadoDao.getAllObrigados();
 
+    final pagamentos = await (await DatabaseHelper.instance.database)
+        .query('pagamentos_parciais');
     if (!mounted) return;
     setState(() {
+      _pagamentos = pagamentos;
       _transacoes = transacoes;
       _obrigados = obrigados;
     });
@@ -87,9 +91,8 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
     final Map<int, double> devedores = {};
 
     for (final transacao in _transacoesFiltradas) {
-      if (transacao.dataPagamentoCompleto == null &&
-          transacao.dataPagamentoRetorno == null) {
-        final valorDevido = transacao.retorno;
+      if (transacao.emAberto) {
+        final valorDevido = transacao.saldo;
         devedores[transacao.idObrigado] =
             (devedores[transacao.idObrigado] ?? 0) + valorDevido;
       }
@@ -141,28 +144,49 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
     double totalJurosPago = 0;
     double totalQuitado = 0;
     final quitados = <int>{};
+    final emprestados = <int>{};
+    double acordosRecebidos = 0, acordosReceber = 0;
 
     for (final transacao in _transacoesFiltradas) {
-      totalEmprestado += transacao.valorEmprestado;
+      if (!transacao.parcelamento &&
+          emprestados.add(transacao.idTransacaoPai ?? -transacao.id!))
+        totalEmprestado += transacao.valorEmprestado;
+      if (transacao.parcelamento) {
+        acordosRecebidos += transacao.dataPagamentoCompleto != null
+            ? transacao.retorno
+            : transacao.valorPagoParcial;
+        acordosReceber += transacao.saldo;
+        continue;
+      }
+      totalJurosPago += transacao.valorPagoParcial;
+      if (transacao.renegociadoEm != null) continue;
 
       if (transacao.dataPagamentoCompleto != null) {
         if (quitados.add(transacao.idTransacaoPai ?? -transacao.id!)) {
-          totalQuitado +=
-              transacao.valorEmprestado * (1 + transacao.percentualJuros / 100);
+          totalQuitado += transacao.valorEmprestado *
+                  (1 + transacao.percentualJuros / 100) -
+              transacao.valorPagoParcial;
         }
       } else if (transacao.dataPagamentoRetorno != null) {
-        totalJurosPago += transacao.retorno;
+        totalJurosPago += transacao.retorno - transacao.valorPagoParcial;
       } else {
-        totalJurosReceber += transacao.retorno;
+        totalJurosReceber += transacao.saldo;
       }
     }
 
+    final ids = _transacoesFiltradas.map((t) => t.id).toSet();
+    final entradas = _pagamentos
+        .where((p) => p['tipo'] == 'entrada' && ids.contains(p['transacao_id']))
+        .fold<double>(0, (sum, p) => sum + (p['valor'] as num).toDouble());
     return {
+      'Acordos a Receber': acordosReceber,
+      'Recebido em Acordos': acordosRecebidos + entradas,
       'Total Emprestado': totalEmprestado,
       'Juros a Receber': totalJurosReceber,
       'Juros Pago': totalJurosPago,
       'Total Quitado': totalQuitado,
-      'Lucro': (totalQuitado + totalJurosPago) - totalEmprestado,
+      'Lucro': (totalQuitado + totalJurosPago + acordosRecebidos + entradas) -
+          totalEmprestado,
     };
   }
 
@@ -171,11 +195,10 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
     final Map<String, double> arrecadacaoPorMes = {};
 
     for (final transacao in _transacoesFiltradas) {
-      if (transacao.dataPagamentoCompleto == null &&
-          transacao.dataPagamentoRetorno == null) {
+      if (transacao.emAberto) {
         final mesAno = DateFormat('MM/yyyy')
             .format(transacao.dataVencimento ?? transacao.dataEmprestimo);
-        final juros = transacao.retorno;
+        final juros = transacao.saldo;
 
         arrecadacaoPorMes[mesAno] = (arrecadacaoPorMes[mesAno] ?? 0) + juros;
       }
@@ -193,10 +216,17 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
   Map<String, double> get _jurosPorMes {
     final values = <String, double>{};
     for (final t in _transacoesFiltradas) {
-      if (t.dataPagamentoRetorno != null) {
+      if (!t.parcelamento && t.dataPagamentoRetorno != null) {
         final key = DateFormat('yyyy-MM').format(t.dataPagamentoRetorno!);
-        values[key] = (values[key] ?? 0) + t.retorno;
+        values[key] = (values[key] ?? 0) + t.retorno - t.valorPagoParcial;
       }
+    }
+    final ids = _transacoesFiltradas.map((t) => t.id).toSet();
+    for (final p in _pagamentos.where(
+        (p) => p['tipo'] == 'juros' && ids.contains(p['transacao_id']))) {
+      final key =
+          DateFormat('yyyy-MM').format(DateTime.parse(p['data'] as String));
+      values[key] = (values[key] ?? 0) + (p['valor'] as num).toDouble();
     }
     final keys = values.keys.toList()..sort();
     return {
@@ -409,7 +439,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Previsão de Juros a Receber',
+                      'Previsão de Valores a Receber',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,

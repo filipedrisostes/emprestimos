@@ -30,8 +30,7 @@ class NotificacaoService with WidgetsBindingObserver {
     final result = items.where((t) {
       final due = t.dataVencimento;
       return t.id != null &&
-          t.dataPagamentoCompleto == null &&
-          t.dataPagamentoRetorno == null &&
+          t.emAberto &&
           due != null &&
           DateTime(due.year, due.month, due.day, 9).isAfter(now);
     }).toList()
@@ -81,7 +80,8 @@ class NotificacaoService with WidgetsBindingObserver {
       final now = DateTime.now();
       for (final t in proximas(await dao.getAllTransacoes(), now,
           limit: Platform.isIOS ? 64 : null)) {
-        if (t.id == null ||
+        if (!t.emAberto ||
+            t.id == null ||
             t.dataPagamentoCompleto != null ||
             t.dataPagamentoRetorno != null ||
             t.dataVencimento == null) continue;

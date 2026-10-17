@@ -52,7 +52,7 @@ class _EditarObrigadoScreenState extends State<EditarObrigadoScreen> {
       if (mounted) {
         Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Obrigado atualizado com sucesso!')),
+          const SnackBar(content: Text('Cliente atualizado com sucesso!')),
         );
       }
     }
@@ -61,8 +61,8 @@ class _EditarObrigadoScreenState extends State<EditarObrigadoScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Editar Obrigado')),
-      body: Padding(
+      appBar: AppBar(title: const Text('Editar Cliente')),
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Form(
           key: _formKey,
@@ -71,18 +71,23 @@ class _EditarObrigadoScreenState extends State<EditarObrigadoScreen> {
               TextFormField(
                 controller: _nomeController,
                 decoration: const InputDecoration(labelText: 'Nome'),
-                validator: (value) => value == null || value.isEmpty ? 'Informe o nome' : null,
+                validator: (value) =>
+                    value == null || value.isEmpty ? 'Informe o nome' : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _zapController,
+                keyboardType: TextInputType.phone,
                 decoration: const InputDecoration(labelText: 'WhatsApp'),
-                validator: (value) => value == null || value.isEmpty ? 'Informe o WhatsApp' : null,
+                validator: (value) => value == null || value.isEmpty
+                    ? 'Informe o WhatsApp'
+                    : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _mensagemController,
-                decoration: const InputDecoration(labelText: 'Mensagem personalizada'),
+                decoration:
+                    const InputDecoration(labelText: 'Mensagem personalizada'),
                 maxLines: 3,
               ),
               const SizedBox(height: 20),

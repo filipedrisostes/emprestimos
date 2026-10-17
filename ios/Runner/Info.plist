@@ -85,5 +85,7 @@
 			</array>
 		</dict>
 	</dict>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Use o Face ID para proteger o acesso aos seus clientes e empréstimos.</string>
 </dict>
 </plist>

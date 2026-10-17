@@ -1,52 +1,53 @@
-import 'package:shared_preferences/shared_preferences.dart';
+import 'database_helper.dart';
+
+class ConfiguracaoRepository {
+  final DatabaseHelper helper;
+  ConfiguracaoRepository(this.helper);
+
+  Future<Map<String, Object?>> carregar() async =>
+      (await (await helper.database).query('configuracoes', where: 'id = 1'))
+          .single;
+
+  Future<void> salvar(Map<String, Object?> valores) =>
+      helper.write((txn) async {
+        final current =
+            (await txn.query('configuracoes', where: 'id = 1')).single;
+        if (valores.entries.every((e) => current[e.key] == e.value)) return;
+        await txn.update('configuracoes', valores, where: 'id = 1');
+      });
+}
 
 class ConfiguracaoService {
-  static const _jurosPadraoKey = 'juros_padrao';
-  static const _diasVencimentoPadraoKey =
-      'dias_vencimento_padrao'; // ✅ Novo campo para dias vencimento
-  static const _emailPadraoKey = 'email_padrao';
+  static ConfiguracaoRepository get _repository =>
+      ConfiguracaoRepository(DatabaseHelper.instance);
 
-  // Retorna o valor padrão de juros salvo
-  static Future<double> getJurosPadrao() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getDouble(_jurosPadraoKey) ?? 30.0; // 5% como padrão
-  }
-
-  // Atualiza o valor de juros padrão
-  static Future<void> setJurosPadrao(double valor) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_jurosPadraoKey, valor);
-  }
-
-  // ✅ Novo método: Retorna dias de vencimento padrão (default 30)
-  static Future<int> getDiasVencimentoPadrao() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.get(_diasVencimentoPadraoKey);
-    if (raw is int) return raw;
-    if (raw is String) return int.tryParse(raw) ?? 30;
-    return 30;
-  }
-
-  // ✅ Novo método: Atualiza dias de vencimento padrão
-  static Future<void> setDiasVencimentoPadrao(int dias) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_diasVencimentoPadraoKey, dias);
-  }
-
-  static Future<String> getEmailPadrao() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_emailPadraoKey) ?? "Sem email definido";
-  }
-
-  static Future<void> setEmailPadrao(String email) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_emailPadraoKey, email);
-  }
-
+  static Future<double> getJurosPadrao() async =>
+      ((await _repository.carregar())['juros_padrao'] as num).toDouble();
+  static Future<int> getDiasVencimentoPadrao() async =>
+      (await _repository.carregar())['dias_vencimento_padrao'] as int;
+  static Future<String> getEmailPadrao() async =>
+      (await _repository.carregar())['email_padrao'] as String;
   static Future<String> getZapPadrao() async =>
-      (await SharedPreferences.getInstance()).getString('zap_padrao') ??
-      'Sem celular definido';
-  static Future<void> setZapPadrao(String zap) async {
-    await (await SharedPreferences.getInstance()).setString('zap_padrao', zap);
-  }
+      (await _repository.carregar())['zap_padrao'] as String;
+
+  static Future<void> salvar(
+          {required double juros,
+          required String email,
+          required String celular,
+          required int diasVencimento}) =>
+      _repository.salvar({
+        'juros_padrao': juros,
+        'email_padrao': email,
+        'zap_padrao': celular,
+        'dias_vencimento_padrao': diasVencimento
+      });
+
+  static Future<void> setJurosPadrao(double valor) =>
+      _repository.salvar({'juros_padrao': valor});
+  static Future<void> setEmailPadrao(String valor) =>
+      _repository.salvar({'email_padrao': valor});
+  static Future<void> setZapPadrao(String valor) =>
+      _repository.salvar({'zap_padrao': valor});
+  static Future<void> setDiasVencimentoPadrao(int valor) =>
+      _repository.salvar({'dias_vencimento_padrao': valor});
 }

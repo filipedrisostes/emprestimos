@@ -8,7 +8,15 @@ class EmprestimoDetalhado {
   bool get pago =>
       parcelas.isNotEmpty &&
       parcelas.every((p) => p.dataPagamentoCompleto != null);
-  double get jurosPagos => parcelas
-      .where((p) => p.dataPagamentoRetorno != null)
-      .fold(0, (s, p) => s + p.retorno);
+  bool get parcial => parcelas.any((p) => p.parcial);
+  String get situacao => pago
+      ? 'Pago'
+      : parcial
+          ? 'Parcial'
+          : 'Em Aberto';
+  double get jurosPagos => parcelas.where((p) => !p.parcelamento).fold(
+      0,
+      (s, p) =>
+          s +
+          (p.dataPagamentoRetorno != null ? p.retorno : p.valorPagoParcial));
 }
